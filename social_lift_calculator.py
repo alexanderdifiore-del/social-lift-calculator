@@ -310,89 +310,135 @@ if multi_post:
     df = apply_social_lift(df, second_post_timestamp, 0.65)
 
 # -----------------------------
-# CSV UPLOAD OVERRIDE
+# CSV UPLOAD OVERRIDE WITH COLUMN MAPPING
 # -----------------------------
 
 if data_mode == "CSV upload":
     if uploaded_csv is not None:
-        uploaded_df = pd.read_csv(uploaded_csv)
+        try:
+            uploaded_df = pd.read_csv(uploaded_csv)
+        except Exception:
+            uploaded_csv.seek(0)
+            try:
+                uploaded_df = pd.read_csv(uploaded_csv, sep=None, engine="python")
+            except Exception:
+                st.error(
+                    "The uploaded file could not be read as a clean CSV. "
+                    "Try exporting again as CSV from Numbers, Excel, or Google Sheets."
+                )
+                st.stop()
 
-        # Clean column names so the app is forgiving
-        uploaded_df.columns = (
-            uploaded_df.columns
-            .str.strip()
-            .str.lower()
-            .str.replace(" ", "_")
+        # Clean column names for display and matching
+        uploaded_df.columns = [
+            str(col).strip().replace("\n", " ").replace("\r", " ")
+            for col in uploaded_df.columns
+        ]
+
+        st.success("CSV uploaded. Map your columns below.")
+
+        with st.expander("Preview uploaded CSV", expanded=False):
+            st.dataframe(uploaded_df.head(10), use_container_width=True)
+            st.write("Detected columns:")
+            st.write(list(uploaded_df.columns))
+
+        columns = list(uploaded_df.columns)
+
+        timestamp_column = st.selectbox(
+            "Select timestamp column",
+            columns,
+            index=0
         )
 
-        # Allow either "streams" or "actual_streams"
-        if "actual_streams" not in uploaded_df.columns and "streams" in uploaded_df.columns:
-            uploaded_df = uploaded_df.rename(columns={"streams": "actual_streams"})
+        actual_column = st.selectbox(
+            "Select actual streams column",
+            columns,
+            index=1 if len(columns) > 1 else 0
+        )
 
-        required_columns = {"timestamp", "actual_streams"}
+        baseline_column_options = ["Auto-estimate baseline"] + columns
 
-        if not required_columns.issubset(uploaded_df.columns):
-            st.error(
-                "CSV upload needs at least these columns: timestamp and actual_streams."
-            )
-        else:
-            uploaded_df["timestamp"] = pd.to_datetime(uploaded_df["timestamp"])
-            uploaded_df["actual_streams"] = pd.to_numeric(
-                uploaded_df["actual_streams"],
+        baseline_column = st.selectbox(
+            "Select expected baseline column",
+            baseline_column_options,
+            index=0
+        )
+
+        uploaded_df = uploaded_df.rename(columns={
+            timestamp_column: "timestamp",
+            actual_column: "actual_streams"
+        })
+
+        uploaded_df["timestamp"] = pd.to_datetime(
+            uploaded_df["timestamp"],
+            errors="coerce"
+        )
+
+        uploaded_df["actual_streams"] = pd.to_numeric(
+            uploaded_df["actual_streams"],
+            errors="coerce"
+        )
+
+        uploaded_df = uploaded_df.dropna(subset=["timestamp", "actual_streams"])
+        uploaded_df = uploaded_df.sort_values("timestamp")
+
+        if baseline_column != "Auto-estimate baseline":
+            uploaded_df = uploaded_df.rename(columns={
+                baseline_column: "expected_baseline_streams"
+            })
+
+            uploaded_df["expected_baseline_streams"] = pd.to_numeric(
+                uploaded_df["expected_baseline_streams"],
                 errors="coerce"
             )
 
-            uploaded_df = uploaded_df.dropna(subset=["timestamp", "actual_streams"])
-            uploaded_df = uploaded_df.sort_values("timestamp")
+            uploaded_df["expected_baseline_streams"] = uploaded_df[
+                "expected_baseline_streams"
+            ].fillna(uploaded_df["actual_streams"].median())
 
-            # If the CSV does not include a baseline column, estimate one.
-            if "expected_baseline_streams" not in uploaded_df.columns:
-                temp_impact_end = post_timestamp + timedelta(hours=impact_window_hours)
+        else:
+            temp_impact_end = post_timestamp + timedelta(hours=impact_window_hours)
 
-                non_impact_mask = (
-                    (uploaded_df["timestamp"] < post_timestamp)
-                    |
-                    (uploaded_df["timestamp"] >= temp_impact_end)
-                )
+            non_impact_mask = (
+                (uploaded_df["timestamp"] < post_timestamp)
+                |
+                (uploaded_df["timestamp"] >= temp_impact_end)
+            )
 
-                baseline_source = uploaded_df.loc[non_impact_mask].copy()
+            baseline_source = uploaded_df.loc[non_impact_mask].copy()
 
-                if baseline_source.empty:
-                    fallback_baseline = uploaded_df["actual_streams"].median()
-                    uploaded_df["expected_baseline_streams"] = fallback_baseline
-                else:
-                    baseline_source["hour"] = baseline_source["timestamp"].dt.hour
-                    hourly_profile = baseline_source.groupby("hour")["actual_streams"].median()
-
-                    uploaded_df["hour"] = uploaded_df["timestamp"].dt.hour
-                    uploaded_df["expected_baseline_streams"] = (
-                        uploaded_df["hour"]
-                        .map(hourly_profile)
-                        .fillna(baseline_source["actual_streams"].median())
-                    )
-
-                    uploaded_df = uploaded_df.drop(columns=["hour"])
-            else:
-                uploaded_df["expected_baseline_streams"] = pd.to_numeric(
-                    uploaded_df["expected_baseline_streams"],
-                    errors="coerce"
-                )
-
+            if baseline_source.empty:
                 uploaded_df["expected_baseline_streams"] = uploaded_df[
-                    "expected_baseline_streams"
-                ].fillna(uploaded_df["actual_streams"].median())
+                    "actual_streams"
+                ].median()
+            else:
+                baseline_source["hour"] = baseline_source["timestamp"].dt.hour
+                hourly_profile = baseline_source.groupby("hour")[
+                    "actual_streams"
+                ].median()
 
-            df = uploaded_df[[
-                "timestamp",
-                "expected_baseline_streams",
-                "actual_streams"
-            ]].copy()
+                uploaded_df["hour"] = uploaded_df["timestamp"].dt.hour
 
-            st.success("CSV uploaded successfully. Dashboard is using uploaded streaming data.")
+                uploaded_df["expected_baseline_streams"] = (
+                    uploaded_df["hour"]
+                    .map(hourly_profile)
+                    .fillna(baseline_source["actual_streams"].median())
+                )
+
+                uploaded_df = uploaded_df.drop(columns=["hour"])
+
+        df = uploaded_df[[
+            "timestamp",
+            "expected_baseline_streams",
+            "actual_streams"
+        ]].copy()
+
+        st.success("CSV data is now powering the dashboard.")
+
     else:
-        st.warning("CSV upload mode selected, but no CSV has been uploaded yet. Showing simulated data until a file is added.")# -----------------------------
-# METRICS
-# -----------------------------
+        st.warning(
+            "CSV upload mode selected, but no CSV has been uploaded yet. "
+            "Showing simulated data until a file is added."
+        )
 
 impact_end = post_timestamp + timedelta(hours=impact_window_hours)
 
