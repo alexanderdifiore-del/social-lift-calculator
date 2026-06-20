@@ -16,8 +16,8 @@ st.set_page_config(
 
 st.sidebar.title("Campaign Inputs")
 
-artist_name = st.sidebar.text_input("Artist Name", "Christina Perri")
-song_title = st.sidebar.text_input("Song Title", "arms")
+artist_name = st.sidebar.text_input("Artist Name", "Example Artist")
+song_title = st.sidebar.text_input("Song Title", "Example Song")
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("Mock Opus / Track Info")
