@@ -5,8 +5,7 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta
 
 st.set_page_config(
-    page_title="Social Media Streaming Lift Calculator",
-    page_icon="📈",
+    page_title="lollie",
     layout="wide"
 )
 
