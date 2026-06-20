@@ -202,6 +202,53 @@ manual_engagement_rate = st.sidebar.slider(
 
 
 st.sidebar.markdown("---")
+st.sidebar.subheader("YouTube Upscale Prioritization")
+
+upscale_priority_enabled = st.sidebar.checkbox(
+    "Enable YouTube Upscale Priority Calculator",
+    value=True,
+    help="Score and rank YouTube videos, visualizers, and live performances for potential upscaling."
+)
+
+upscale_data_mode = st.sidebar.radio(
+    "Upscale Data Mode",
+    [
+        "Manual table entry",
+        "Upscale CSV upload"
+    ],
+    help="Manually enter video candidates or upload a CSV of YouTube assets."
+)
+
+upscale_candidate_count = 5
+upscale_csv_file = None
+
+if upscale_priority_enabled:
+    if upscale_data_mode == "Manual table entry":
+        upscale_candidate_count = st.sidebar.number_input(
+            "Number of Video Candidates",
+            min_value=1,
+            max_value=25,
+            value=5,
+            step=1,
+            help="How many videos you want to manually score."
+        )
+
+    elif upscale_data_mode == "Upscale CSV upload":
+        upscale_csv_file = st.sidebar.file_uploader(
+            "Upload Upscale Priority CSV",
+            type=["csv"],
+            key="upscale_csv_file",
+            help="Upload a CSV with video title, format, resolution, views, momentum, and priority fields."
+        )
+
+        with st.sidebar.expander("Upscale CSV format example"):
+            st.code(
+                """video_title,content_format,current_resolution,current_youtube_views,last_28_day_views,engagement_rate,catalog_priority,commercial_upside,asset_readiness,rights_confidence,upscale_difficulty,urgency
+Example Music Video,YouTube Music Video,480p,12500000,240000,4.8,9,8,7,9,4,8
+Example Live Performance,YouTube Live Performance,720p,3200000,85000,5.2,7,6,8,8,5,6
+Example Visualizer,YouTube Visualizer,1080p,950000,18000,3.1,5,5,9,9,2,4""",
+                language="csv"
+            )st.sidebar.markdown("---")
 st.sidebar.subheader("Commerce / Product Revenue")
 
 commerce_enabled = st.sidebar.checkbox(
@@ -1333,6 +1380,423 @@ else:
     )
 
 # -----------------------------
+# YOUTUBE UPSCALE PRIORITY CALCULATOR
+# -----------------------------
+
+if upscale_priority_enabled:
+    st.markdown("### YouTube Upscale Priority Calculator")
+
+    st.caption(
+        "Rank YouTube videos, visualizers, live performances, and other video assets "
+        "based on demand, catalog importance, commercial upside, asset readiness, "
+        "rights confidence, and technical need for upscaling."
+    )
+
+    upscale_columns = [
+        "Video Title",
+        "Content Format",
+        "Current Max Resolution",
+        "Current YouTube Views",
+        "Last 28 Day Views",
+        "Engagement Rate (%)",
+        "Catalog Priority (1-10)",
+        "Commercial Upside (1-10)",
+        "Asset Readiness (1-10)",
+        "Rights Confidence (1-10)",
+        "Upscale Difficulty (1-10)",
+        "Urgency / Deadline (1-10)"
+    ]
+
+    content_format_options = [
+        "YouTube Music Video",
+        "YouTube Live Performance",
+        "YouTube Visualizer",
+        "YouTube Video",
+        "YouTube Shorts",
+        "Lyric Video",
+        "TV Performance",
+        "Interview / EPK",
+        "Documentary Clip",
+        "Other"
+    ]
+
+    resolution_options = [
+        "240p",
+        "360p",
+        "480p",
+        "720p",
+        "1080p",
+        "1440p",
+        "2160p / 4K"
+    ]
+
+    if upscale_data_mode == "Manual table entry":
+        default_upscale_rows = []
+
+        for row_index in range(int(upscale_candidate_count)):
+            default_upscale_rows.append({
+                "Video Title": f"Video Candidate {row_index + 1}",
+                "Content Format": content_format_options[row_index % len(content_format_options)],
+                "Current Max Resolution": "480p" if row_index == 0 else "720p",
+                "Current YouTube Views": 1000000 * (row_index + 1),
+                "Last 28 Day Views": 50000 * (row_index + 1),
+                "Engagement Rate (%)": 4.0,
+                "Catalog Priority (1-10)": 7,
+                "Commercial Upside (1-10)": 6,
+                "Asset Readiness (1-10)": 7,
+                "Rights Confidence (1-10)": 8,
+                "Upscale Difficulty (1-10)": 4,
+                "Urgency / Deadline (1-10)": 5
+            })
+
+        upscale_input_df = pd.DataFrame(default_upscale_rows)
+
+    else:
+        if upscale_csv_file is not None:
+            try:
+                upscale_input_df = pd.read_csv(upscale_csv_file)
+            except Exception:
+                upscale_csv_file.seek(0)
+                try:
+                    upscale_input_df = pd.read_csv(
+                        upscale_csv_file,
+                        sep=None,
+                        engine="python"
+                    )
+                except Exception:
+                    st.error("The upscale CSV could not be read. Try exporting it again as a clean CSV.")
+                    upscale_input_df = pd.DataFrame()
+        else:
+            upscale_input_df = pd.DataFrame(columns=upscale_columns)
+
+        if not upscale_input_df.empty:
+            upscale_input_df.columns = [
+                str(col).strip().lower().replace(" ", "_")
+                for col in upscale_input_df.columns
+            ]
+
+            upscale_column_aliases = {
+                "video_title": "Video Title",
+                "title": "Video Title",
+                "content_format": "Content Format",
+                "format": "Content Format",
+                "current_resolution": "Current Max Resolution",
+                "resolution": "Current Max Resolution",
+                "current_max_resolution": "Current Max Resolution",
+                "current_youtube_views": "Current YouTube Views",
+                "youtube_views": "Current YouTube Views",
+                "views": "Current YouTube Views",
+                "last_28_day_views": "Last 28 Day Views",
+                "recent_views": "Last 28 Day Views",
+                "engagement_rate": "Engagement Rate (%)",
+                "engagement_rate_%": "Engagement Rate (%)",
+                "catalog_priority": "Catalog Priority (1-10)",
+                "commercial_upside": "Commercial Upside (1-10)",
+                "asset_readiness": "Asset Readiness (1-10)",
+                "rights_confidence": "Rights Confidence (1-10)",
+                "upscale_difficulty": "Upscale Difficulty (1-10)",
+                "urgency": "Urgency / Deadline (1-10)",
+                "urgency_deadline": "Urgency / Deadline (1-10)"
+            }
+
+            upscale_input_df = upscale_input_df.rename(
+                columns={
+                    col: upscale_column_aliases.get(col, col)
+                    for col in upscale_input_df.columns
+                }
+            )
+
+        for column in upscale_columns:
+            if column not in upscale_input_df.columns:
+                if column == "Video Title":
+                    upscale_input_df[column] = "Untitled Video"
+                elif column == "Content Format":
+                    upscale_input_df[column] = "YouTube Music Video"
+                elif column == "Current Max Resolution":
+                    upscale_input_df[column] = "720p"
+                elif column in [
+                    "Catalog Priority (1-10)",
+                    "Commercial Upside (1-10)",
+                    "Asset Readiness (1-10)",
+                    "Rights Confidence (1-10)",
+                    "Upscale Difficulty (1-10)",
+                    "Urgency / Deadline (1-10)"
+                ]:
+                    upscale_input_df[column] = 5
+                else:
+                    upscale_input_df[column] = 0
+
+        upscale_input_df = upscale_input_df[upscale_columns]
+
+    st.markdown("#### Video Candidate Inputs")
+
+    edited_upscale_df = st.data_editor(
+        upscale_input_df,
+        use_container_width=True,
+        num_rows="dynamic",
+        column_config={
+            "Video Title": st.column_config.TextColumn(
+                "Video Title",
+                help="Name of the YouTube video, performance, visualizer, or asset."
+            ),
+            "Content Format": st.column_config.SelectboxColumn(
+                "Content Format",
+                options=content_format_options
+            ),
+            "Current Max Resolution": st.column_config.SelectboxColumn(
+                "Current Max Resolution",
+                options=resolution_options
+            ),
+            "Current YouTube Views": st.column_config.NumberColumn(
+                "Current YouTube Views",
+                min_value=0,
+                step=1000
+            ),
+            "Last 28 Day Views": st.column_config.NumberColumn(
+                "Last 28 Day Views",
+                min_value=0,
+                step=1000
+            ),
+            "Engagement Rate (%)": st.column_config.NumberColumn(
+                "Engagement Rate (%)",
+                min_value=0.0,
+                max_value=100.0,
+                step=0.1
+            ),
+            "Catalog Priority (1-10)": st.column_config.NumberColumn(
+                "Catalog Priority (1-10)",
+                min_value=1,
+                max_value=10,
+                step=1
+            ),
+            "Commercial Upside (1-10)": st.column_config.NumberColumn(
+                "Commercial Upside (1-10)",
+                min_value=1,
+                max_value=10,
+                step=1
+            ),
+            "Asset Readiness (1-10)": st.column_config.NumberColumn(
+                "Asset Readiness (1-10)",
+                min_value=1,
+                max_value=10,
+                step=1
+            ),
+            "Rights Confidence (1-10)": st.column_config.NumberColumn(
+                "Rights Confidence (1-10)",
+                min_value=1,
+                max_value=10,
+                step=1
+            ),
+            "Upscale Difficulty (1-10)": st.column_config.NumberColumn(
+                "Upscale Difficulty (1-10)",
+                min_value=1,
+                max_value=10,
+                step=1,
+                help="Higher means more technically difficult."
+            ),
+            "Urgency / Deadline (1-10)": st.column_config.NumberColumn(
+                "Urgency / Deadline (1-10)",
+                min_value=1,
+                max_value=10,
+                step=1
+            )
+        }
+    )
+
+    score_df = edited_upscale_df.copy()
+
+    numeric_upscale_columns = [
+        "Current YouTube Views",
+        "Last 28 Day Views",
+        "Engagement Rate (%)",
+        "Catalog Priority (1-10)",
+        "Commercial Upside (1-10)",
+        "Asset Readiness (1-10)",
+        "Rights Confidence (1-10)",
+        "Upscale Difficulty (1-10)",
+        "Urgency / Deadline (1-10)"
+    ]
+
+    for column in numeric_upscale_columns:
+        score_df[column] = pd.to_numeric(score_df[column], errors="coerce").fillna(0)
+
+    def resolution_quality_gap_score(resolution):
+        resolution_text = str(resolution).lower()
+
+        if "2160" in resolution_text or "4k" in resolution_text:
+            return 0
+        elif "1440" in resolution_text:
+            return 10
+        elif "1080" in resolution_text:
+            return 20
+        elif "720" in resolution_text:
+            return 50
+        elif "480" in resolution_text:
+            return 75
+        elif "360" in resolution_text:
+            return 90
+        elif "240" in resolution_text:
+            return 100
+        else:
+            return 50
+
+    score_df["Quality Gap Score"] = score_df["Current Max Resolution"].apply(
+        resolution_quality_gap_score
+    )
+
+    score_df["Lifetime Demand Score"] = np.minimum(
+        np.log10(score_df["Current YouTube Views"] + 1) / 7 * 100,
+        100
+    )
+
+    score_df["Recent Momentum Score"] = np.minimum(
+        np.log10(score_df["Last 28 Day Views"] + 1) / 5 * 100,
+        100
+    )
+
+    score_df["Engagement Score"] = np.minimum(
+        score_df["Engagement Rate (%)"] / 8 * 100,
+        100
+    )
+
+    score_df["Catalog Priority Score"] = score_df["Catalog Priority (1-10)"] * 10
+    score_df["Commercial Upside Score"] = score_df["Commercial Upside (1-10)"] * 10
+
+    score_df["Readiness Score"] = (
+        (
+            score_df["Asset Readiness (1-10)"]
+            + score_df["Rights Confidence (1-10)"]
+        )
+        / 2
+        * 10
+    )
+
+    score_df["Ease Score"] = (11 - score_df["Upscale Difficulty (1-10)"]) * 10
+    score_df["Urgency Score"] = score_df["Urgency / Deadline (1-10)"] * 10
+
+    score_df["Upscale Priority Score"] = (
+        score_df["Quality Gap Score"] * 0.18
+        + score_df["Lifetime Demand Score"] * 0.15
+        + score_df["Recent Momentum Score"] * 0.15
+        + score_df["Engagement Score"] * 0.08
+        + score_df["Catalog Priority Score"] * 0.14
+        + score_df["Commercial Upside Score"] * 0.12
+        + score_df["Readiness Score"] * 0.10
+        + score_df["Ease Score"] * 0.05
+        + score_df["Urgency Score"] * 0.03
+    )
+
+    def upscale_priority_tier(score):
+        if score >= 80:
+            return "Immediate Priority"
+        elif score >= 65:
+            return "High Priority"
+        elif score >= 50:
+            return "Medium Priority"
+        else:
+            return "Low Priority"
+
+    def upscale_rationale(row):
+        reasons = []
+
+        if row["Quality Gap Score"] >= 75:
+            reasons.append("large quality gap")
+        if row["Recent Momentum Score"] >= 70:
+            reasons.append("strong recent momentum")
+        if row["Catalog Priority (1-10)"] >= 8:
+            reasons.append("high catalog priority")
+        if row["Commercial Upside (1-10)"] >= 8:
+            reasons.append("strong commercial upside")
+        if row["Asset Readiness (1-10)"] <= 4:
+            reasons.append("asset readiness review needed")
+        if row["Rights Confidence (1-10)"] <= 4:
+            reasons.append("rights/clearance review needed")
+        if row["Upscale Difficulty (1-10)"] >= 8:
+            reasons.append("technically difficult upscale")
+
+        if len(reasons) == 0:
+            return "balanced candidate"
+
+        return "; ".join(reasons)
+
+    score_df["Priority Tier"] = score_df["Upscale Priority Score"].apply(
+        upscale_priority_tier
+    )
+
+    score_df["Priority Rationale"] = score_df.apply(upscale_rationale, axis=1)
+
+    ranked_upscale_df = score_df.sort_values(
+        "Upscale Priority Score",
+        ascending=False
+    ).reset_index(drop=True)
+
+    ranked_upscale_df.insert(
+        0,
+        "Rank",
+        range(1, len(ranked_upscale_df) + 1)
+    )
+
+    st.markdown("#### Upscale Priority Ranking")
+
+    top_upscale_df = ranked_upscale_df.head(10)
+
+    if not top_upscale_df.empty:
+        upscale_fig = go.Figure()
+
+        upscale_fig.add_trace(go.Bar(
+            x=top_upscale_df["Upscale Priority Score"],
+            y=top_upscale_df["Video Title"],
+            orientation="h",
+            text=[
+                f"{score:,.1f}"
+                for score in top_upscale_df["Upscale Priority Score"]
+            ],
+            textposition="outside",
+            hovertemplate=(
+                "Video: %{y}<br>"
+                "Priority Score: %{x:,.1f}<extra></extra>"
+            )
+        ))
+
+        upscale_fig.update_layout(
+            title="Top YouTube Upscale Candidates",
+            xaxis_title="Upscale Priority Score",
+            yaxis_title="Video Asset",
+            template="plotly_white",
+            height=450,
+            margin=dict(l=40, r=40, t=80, b=40),
+            yaxis=dict(autorange="reversed")
+        )
+
+        st.plotly_chart(upscale_fig, use_container_width=True)
+
+    display_upscale_df = ranked_upscale_df[[
+        "Rank",
+        "Video Title",
+        "Content Format",
+        "Current Max Resolution",
+        "Current YouTube Views",
+        "Last 28 Day Views",
+        "Upscale Priority Score",
+        "Priority Tier",
+        "Priority Rationale"
+    ]].copy()
+
+    display_upscale_df["Upscale Priority Score"] = display_upscale_df[
+        "Upscale Priority Score"
+    ].map(lambda value: f"{value:,.1f}")
+
+    st.dataframe(
+        display_upscale_df,
+        use_container_width=True,
+        hide_index=True
+    )
+
+    st.caption(
+        "Priority Score is directional and intended for planning. It combines technical need, "
+        "audience demand, recent momentum, catalog importance, commercial upside, readiness, "
+        "rights confidence, difficulty, and urgency."
+    )# -----------------------------
 # CHART
 # -----------------------------
 # Commerce overlay projection for the streaming trend chart
