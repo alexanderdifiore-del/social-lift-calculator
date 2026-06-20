@@ -275,7 +275,26 @@ df.loc[df["lift_area"] < 0, "lift_area"] = 0
 # MAIN PAGE
 # -----------------------------
 
-st.title("📈 Social Media Streaming Lift Calculator")
+st.markdown(
+    """
+    <div style="
+        font-size: 1.35rem;
+        font-weight: 600;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: rgba(143, 252, 255, 0.82);
+        text-shadow:
+            0 0 6px rgba(143, 252, 255, 0.35),
+            0 0 14px rgba(143, 252, 255, 0.18);
+        font-family: 'Helvetica Neue', Arial, sans-serif;
+        margin-top: 0.75rem;
+        margin-bottom: 1.5rem;
+    ">
+        Social Media Streaming Lift Calculator
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 
 st.subheader(f"{artist_name} — {song_title}")
 
