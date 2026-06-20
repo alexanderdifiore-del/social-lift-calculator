@@ -530,23 +530,33 @@ st.plotly_chart(fig, use_container_width=True)
 # EXPLANATION
 # -----------------------------
 
-st.markdown("---")
-
 st.markdown("""
 ### How to read this dashboard
 
+**Data Source Mode**  
+The dashboard can run in two modes:
+
+- **Auto simulation** generates mock hourly streaming data using the sidebar assumptions.
+- **Manual demo inputs** lets you type fake campaign numbers directly into the sidebar so the KPIs, lift estimate, and summary bar chart update during a demo.
+
 **Expected Baseline Streams**  
-The model’s estimate of what streams would have looked like without the social post.
+The model’s estimate of how many streams the track would have received without the social post.
 
 **Actual Streams**  
-The simulated stream count after the social post goes live.
+The simulated or manually entered stream count after the social post goes live.
 
 **Estimated Social Lift**  
-The extra streams above baseline during the selected impact window.
+The difference between actual streams and expected baseline streams.
+
+**Formula**  
+Estimated Social Lift = Actual Streams - Expected Baseline Streams
 
 **Impact Window**  
-The measurement period after the post. A 24-hour window is good for a fast TikTok-style spike. A 72-hour or 168-hour window is better for slower campaign effects.
+The selected measurement period after the post. A 24-hour window is useful for fast TikTok/Reels/Shorts spikes. A 72-hour or 168-hour window is better for slower campaign effects.
+
+**Impact Window Summary**  
+The bar chart compares expected streams, actual streams, and estimated lift so the campaign impact is easy to read at a glance.
 
 **Important note**  
-This is a prototype using mock data. It is designed to show the logic and workflow of a label analytics tool, not to represent real Opus or DSP data.
+This is a prototype using mock or manually entered demo data. It is designed to show the logic and workflow of a music analytics tool, not to represent real Opus, DSP, or confidential label data.
 """)
