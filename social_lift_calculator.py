@@ -137,9 +137,27 @@ st.sidebar.subheader("Manual Demo Inputs")
 
 data_mode = st.sidebar.radio(
     "Data Source Mode",
-    ["Auto simulation", "Manual demo inputs"],
-    help="Auto simulation generates fake hourly data. Manual demo inputs let you type fake campaign numbers yourself."
+    ["Auto simulation", "Manual demo inputs", "CSV upload"],
+    help="Choose whether the dashboard uses simulated data, manual demo numbers, or an uploaded CSV file."
 )
+
+uploaded_csv = None
+
+if data_mode == "CSV upload":
+    uploaded_csv = st.sidebar.file_uploader(
+        "Upload Streaming CSV",
+        type=["csv"],
+        help="Upload a CSV with timestamp and actual_streams columns. expected_baseline_streams is optional."
+    )
+
+    with st.sidebar.expander("CSV format example"):
+        st.code(
+            """timestamp,actual_streams,expected_baseline_streams
+2026-06-17 00:00:00,2400,2300
+2026-06-17 01:00:00,2100,2200
+2026-06-17 02:00:00,1900,2100""",
+            language="csv"
+        )
 
 manual_expected_streams = st.sidebar.number_input(
     "Manual Expected Streams",
@@ -292,6 +310,87 @@ if multi_post:
     df = apply_social_lift(df, second_post_timestamp, 0.65)
 
 # -----------------------------
+# CSV UPLOAD OVERRIDE
+# -----------------------------
+
+if data_mode == "CSV upload":
+    if uploaded_csv is not None:
+        uploaded_df = pd.read_csv(uploaded_csv)
+
+        # Clean column names so the app is forgiving
+        uploaded_df.columns = (
+            uploaded_df.columns
+            .str.strip()
+            .str.lower()
+            .str.replace(" ", "_")
+        )
+
+        # Allow either "streams" or "actual_streams"
+        if "actual_streams" not in uploaded_df.columns and "streams" in uploaded_df.columns:
+            uploaded_df = uploaded_df.rename(columns={"streams": "actual_streams"})
+
+        required_columns = {"timestamp", "actual_streams"}
+
+        if not required_columns.issubset(uploaded_df.columns):
+            st.error(
+                "CSV upload needs at least these columns: timestamp and actual_streams."
+            )
+        else:
+            uploaded_df["timestamp"] = pd.to_datetime(uploaded_df["timestamp"])
+            uploaded_df["actual_streams"] = pd.to_numeric(
+                uploaded_df["actual_streams"],
+                errors="coerce"
+            )
+
+            uploaded_df = uploaded_df.dropna(subset=["timestamp", "actual_streams"])
+            uploaded_df = uploaded_df.sort_values("timestamp")
+
+            # If the CSV does not include a baseline column, estimate one.
+            if "expected_baseline_streams" not in uploaded_df.columns:
+                temp_impact_end = post_timestamp + timedelta(hours=impact_window_hours)
+
+                non_impact_mask = (
+                    (uploaded_df["timestamp"] < post_timestamp)
+                    |
+                    (uploaded_df["timestamp"] >= temp_impact_end)
+                )
+
+                baseline_source = uploaded_df.loc[non_impact_mask].copy()
+
+                if baseline_source.empty:
+                    fallback_baseline = uploaded_df["actual_streams"].median()
+                    uploaded_df["expected_baseline_streams"] = fallback_baseline
+                else:
+                    baseline_source["hour"] = baseline_source["timestamp"].dt.hour
+                    hourly_profile = baseline_source.groupby("hour")["actual_streams"].median()
+
+                    uploaded_df["hour"] = uploaded_df["timestamp"].dt.hour
+                    uploaded_df["expected_baseline_streams"] = (
+                        uploaded_df["hour"]
+                        .map(hourly_profile)
+                        .fillna(baseline_source["actual_streams"].median())
+                    )
+
+                    uploaded_df = uploaded_df.drop(columns=["hour"])
+            else:
+                uploaded_df["expected_baseline_streams"] = pd.to_numeric(
+                    uploaded_df["expected_baseline_streams"],
+                    errors="coerce"
+                )
+
+                uploaded_df["expected_baseline_streams"] = uploaded_df[
+                    "expected_baseline_streams"
+                ].fillna(uploaded_df["actual_streams"].median())
+
+            df = uploaded_df[[
+                "timestamp",
+                "expected_baseline_streams",
+                "actual_streams"
+            ]].copy()
+
+            st.success("CSV uploaded successfully. Dashboard is using uploaded streaming data.")
+    else:
+        st.warning("CSV upload mode selected, but no CSV has been uploaded yet. Showing simulated data until a file is added.")# -----------------------------
 # METRICS
 # -----------------------------
 
@@ -447,6 +546,10 @@ if data_mode == "Manual demo inputs":
         f"Manual demo mode active: reach/views set to {manual_social_reach:,.0f} "
         f"with {manual_engagement_rate:.1f}% engagement."
     )
+elif data_mode == "CSV upload" and uploaded_csv is not None:
+    st.caption("CSV upload mode active: dashboard is using uploaded streaming data.")
+elif data_mode == "CSV upload":
+    st.caption("CSV upload mode selected, but no file has been uploaded yet. Showing simulated data.")
 else:
     st.caption("Auto simulation mode active: values are generated from the model assumptions.")
 
