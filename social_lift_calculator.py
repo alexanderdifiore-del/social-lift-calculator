@@ -2030,38 +2030,63 @@ st.plotly_chart(fig, use_container_width=True)
 # -----------------------------
 
 st.markdown("""
+
 ### How to read this dashboard
 
-**Data Source Mode**  
-The dashboard can run in two modes:
+**Data Source Mode**
+The streaming lift section can run in three modes:
 
-- **Auto simulation** generates mock hourly streaming data using the sidebar assumptions.
-- **Manual demo inputs** lets you type fake campaign numbers directly into the sidebar so the KPIs, lift estimate, and summary bar chart update during a demo.
+* **Auto simulation** generates mock hourly streaming data using the sidebar assumptions.
+* **Manual demo inputs** lets you type campaign numbers directly into the sidebar so the KPIs, lift estimate, and summary bar chart update during a demo.
+* **CSV upload** lets you upload spreadsheet-style streaming data and map the timestamp, actual streams, and expected baseline columns.
 
-**Expected Baseline Streams**  
-The model’s estimate of how many streams the track would have received without the social post.
+**Expected Baseline Streams**
+The model’s estimate of how many streams the track would have received without the selected social, video, or campaign event.
 
-**Actual Streams**  
-The simulated or manually entered stream count after the social post goes live.
+**Actual Streams**
+The simulated, manually entered, or uploaded stream count after the selected social/video event goes live.
 
-**Estimated Social Lift**  
-The difference between actual streams and expected baseline streams.
+**Estimated Social Lift**
+The difference between actual streams and expected baseline streams during the selected impact window.
 
-**Formula**  
+**Formula**
 Estimated Social Lift = Actual Streams - Expected Baseline Streams
 
-**Impact Window**  
-The selected measurement period after the post. A 24-hour window is useful for fast TikTok/Reels/Shorts spikes. A 72-hour or 168-hour window is better for slower campaign effects.
+**Impact Window**
+The selected measurement period after the post or video event. A 24-hour window is useful for fast TikTok/Reels/Shorts spikes. A 72-hour or 168-hour window is better for slower campaign effects, catalog activity, YouTube videos, music videos, visualizers, and live performances.
 
-**Impact Window Summary**  
-The bar chart compares expected streams, actual streams, and estimated lift so the campaign impact is easy to read at a glance.
+**Impact Window Summary**
+The summary chart compares expected streams, actual streams, and estimated lift so the campaign impact is easy to read at a glance.
 
-**Important note**  
-This is a prototype using mock or manually entered demo data. It is designed to show the logic and workflow of a music analytics tool, not to represent real Opus, DSP, or confidential label data.
+**Commerce Revenue Attribution**
+The commerce section estimates product revenue that may be associated with the social and streaming impact window. Product categories can include vinyl, CDs, cassettes, deluxe editions, box sets, signed products, apparel, accessories, posters, merch bundles, digital downloads, fan memberships, and ticket or VIP upsells.
 
+Commerce revenue can be modeled through auto-estimated product categories, manual dated sales entries, or commerce CSV upload. The model calculates attributed units sold, gross product revenue, estimated net revenue, revenue per 1,000 social views, and revenue per lift stream.
 
+**Commerce Overlay**
+When enabled, the chart can overlay attributed product revenue or product units on top of the streaming trend. The commerce line uses a separate right-side axis because streams and revenue are different measurements.
 
+**YouTube Upscale Priority Calculator**
+The YouTube upscale section helps prioritize which video assets should be considered first for upscaling. It can score music videos, visualizers, live performances, Shorts, lyric videos, TV performances, interviews, EPK clips, documentary clips, and other video assets.
+
+The calculator ranks candidates using a weighted priority model. It considers:
+
+* **Current resolution / quality gap:** Lower-resolution videos receive a higher need score because they have more room for improvement.
+* **Lifetime YouTube views:** Videos with stronger long-term demand are treated as higher-value catalog assets.
+* **Recent 28-day views:** Videos with current momentum are prioritized because an upscale may have more immediate impact.
+* **Engagement rate:** Higher engagement can suggest stronger fan interest beyond passive viewing.
+* **Catalog priority:** Manually reflects how important the artist, track, era, or campaign is to the broader catalog strategy.
+* **Commercial upside:** Estimates how much the asset may support streaming, commerce, sync, playlisting, anniversary campaigns, or other revenue opportunities.
+* **Asset readiness:** Measures whether usable source files, masters, metadata, and supporting materials are available.
+* **Rights confidence:** Helps flag whether the video is clear enough to move forward without major rights or clearance concerns.
+* **Upscale difficulty:** Accounts for how technically difficult the upscale may be. Easier upscales are more efficient to prioritize.
+* **Urgency / deadline:** Gives extra weight to assets tied to a campaign, anniversary, artist moment, release cycle, or internal deadline.
+
+The final **Upscale Priority Score** combines these inputs into a ranked list. Higher scores indicate stronger candidates for near-term upscaling. The priority tier is meant to support triage and planning, not replace human review, creative judgment, rights review, or technical assessment.
+
+**Important note**
+This is a prototype using mock, manually entered, or uploaded demo data. It is designed to show the logic and workflow of a music analytics tool, not to represent real Opus, DSP, YouTube, D2C, retail, financial, or confidential label data unless connected to approved internal systems.
 
 Conceptualized and designed by Alexander DiFiore, Rhino. Named "lollie" after his two beloved cats, Lily and Ollie.
-
 """)
+
