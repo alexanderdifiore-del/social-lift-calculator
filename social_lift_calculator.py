@@ -1515,7 +1515,7 @@ if upscale_priority_enabled:
             if column not in upscale_input_df.columns:
                 if column == "Video Title":
                     upscale_input_df[column] = "Untitled Video"
-                elif column == "ISRC":
+                    elif column == "ISRC":
             upscale_input_df[column] = ""
                 elif column == "Content Format":
                     upscale_input_df[column] = "YouTube Music Video"
