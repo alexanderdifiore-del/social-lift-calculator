@@ -248,7 +248,8 @@ Example Music Video,YouTube Music Video,480p,12500000,240000,4.8,9,8,7,9,4,8
 Example Live Performance,YouTube Live Performance,720p,3200000,85000,5.2,7,6,8,8,5,6
 Example Visualizer,YouTube Visualizer,1080p,950000,18000,3.1,5,5,9,9,2,4""",
                 language="csv"
-            )st.sidebar.markdown("---")
+            )
+st.sidebar.markdown("---")
 st.sidebar.subheader("Commerce / Product Revenue")
 
 commerce_enabled = st.sidebar.checkbox(
