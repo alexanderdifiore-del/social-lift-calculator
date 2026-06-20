@@ -1218,32 +1218,17 @@ fig.add_vrect(
     annotation_position="top left"
 )
 if not commerce_overlay_df.empty:
-    fig.add_trace(go.Bar(
-        x=commerce_overlay_df["timestamp"],
-        y=commerce_overlay_df["commerce_value"],
-        name=commerce_overlay_label,
-        yaxis="y2",
-        opacity=0.35,
-        hovertemplate=(
-            "Date: %{x}<br>"
-            + commerce_overlay_label
-            + ": "
-            + commerce_overlay_hover_prefix
-            + "%{y:,.0f}"
-            + commerce_overlay_hover_suffix
-            + "<extra></extra>"
-        )
-    ))
-
     fig.add_trace(go.Scatter(
         x=commerce_overlay_df["timestamp"],
         y=commerce_overlay_df["cumulative_commerce_value"],
         mode="lines+markers",
-        name=f"Cumulative {commerce_overlay_label}",
+        name=commerce_overlay_label,
         yaxis="y2",
+        line=dict(width=3),
         hovertemplate=(
             "Date: %{x}<br>"
-            "Cumulative: "
+            + commerce_overlay_label
+            + ": "
             + commerce_overlay_hover_prefix
             + "%{y:,.0f}"
             + commerce_overlay_hover_suffix
