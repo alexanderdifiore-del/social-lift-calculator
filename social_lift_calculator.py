@@ -310,123 +310,252 @@ if multi_post:
     df = apply_social_lift(df, second_post_timestamp, 0.65)
 
 # -----------------------------
-# CSV UPLOAD OVERRIDE WITH COLUMN MAPPING
+# CSV UPLOAD OVERRIDE WITH SMART COLUMN MAPPING
 # -----------------------------
 
 if data_mode == "CSV upload":
     if uploaded_csv is not None:
-        try:
-            uploaded_df = pd.read_csv(uploaded_csv)
-        except Exception:
-            uploaded_csv.seek(0)
+        import io
+
+        raw_bytes = uploaded_csv.getvalue()
+
+        decoded_text = None
+        for encoding in ["utf-8-sig", "utf-8", "latin-1"]:
             try:
-                uploaded_df = pd.read_csv(uploaded_csv, sep=None, engine="python")
+                decoded_text = raw_bytes.decode(encoding)
+                break
+            except Exception:
+                pass
+
+        if decoded_text is None:
+            st.error("The uploaded file could not be decoded. Please export it again as a CSV.")
+            st.stop()
+
+        lines = [line for line in decoded_text.splitlines() if line.strip()]
+
+        # Numbers sometimes exports a table title like "Table 1" before the real headers.
+        # This finds the first row that looks like the real header row.
+        header_line_index = 0
+
+        for i, line in enumerate(lines[:30]):
+            normalized_line = line.lower().replace(" ", "_")
+            if "timestamp" in normalized_line and (
+                "actual_streams" in normalized_line
+                or "actual" in normalized_line
+                or "streams" in normalized_line
+            ):
+                header_line_index = i
+                break
+
+        cleaned_text = "\n".join(lines[header_line_index:])
+
+        uploaded_df = None
+
+        # Try common separators: comma CSV, tab-separated, semicolon CSV.
+        for separator in [",", "\t", ";"]:
+            try:
+                candidate_df = pd.read_csv(io.StringIO(cleaned_text), sep=separator)
+                candidate_df = candidate_df.dropna(axis=1, how="all")
+
+                if len(candidate_df.columns) >= 2:
+                    uploaded_df = candidate_df
+                    break
+            except Exception:
+                pass
+
+        # Final fallback: let pandas guess the separator.
+        if uploaded_df is None:
+            try:
+                uploaded_df = pd.read_csv(
+                    io.StringIO(cleaned_text),
+                    sep=None,
+                    engine="python"
+                )
+                uploaded_df = uploaded_df.dropna(axis=1, how="all")
             except Exception:
                 st.error(
                     "The uploaded file could not be read as a clean CSV. "
-                    "Try exporting again as CSV from Numbers, Excel, or Google Sheets."
+                    "Try exporting again from Numbers using File → Export To → CSV."
                 )
                 st.stop()
 
-        # Clean column names for display and matching
+        # Clean column names
         uploaded_df.columns = [
-            str(col).strip().replace("\n", " ").replace("\r", " ")
+            str(col)
+            .strip()
+            .replace("\n", " ")
+            .replace("\r", " ")
+            .replace("\ufeff", "")
             for col in uploaded_df.columns
         ]
+
+        # Remove empty/unnamed columns
+        uploaded_df = uploaded_df.loc[
+            :,
+            [
+                not str(col).lower().startswith("unnamed")
+                for col in uploaded_df.columns
+            ]
+        ]
+
+        columns = list(uploaded_df.columns)
+
+        if len(columns) < 2:
+            st.error(
+                "The CSV was uploaded, but lollie only detected one usable column. "
+                "Please make sure your first real row contains: timestamp, actual_streams, expected_baseline_streams."
+            )
+            st.stop()
 
         st.success("CSV uploaded. Map your columns below.")
 
         with st.expander("Preview uploaded CSV", expanded=False):
             st.dataframe(uploaded_df.head(10), use_container_width=True)
             st.write("Detected columns:")
-            st.write(list(uploaded_df.columns))
+            st.write(columns)
 
-        columns = list(uploaded_df.columns)
+        def guess_column_index(keywords, fallback_index):
+            for keyword in keywords:
+                for i, col in enumerate(columns):
+                    normalized_col = str(col).lower().replace(" ", "_")
+                    if keyword in normalized_col:
+                        return i
+
+            return min(fallback_index, len(columns) - 1)
+
+        timestamp_default = guess_column_index(
+            ["timestamp", "date", "time"],
+            0
+        )
+
+        actual_default = guess_column_index(
+            ["actual_streams", "actual", "streams"],
+            1
+        )
+
+        baseline_guess_index = None
+        for i, col in enumerate(columns):
+            normalized_col = str(col).lower().replace(" ", "_")
+            if "expected" in normalized_col or "baseline" in normalized_col:
+                baseline_guess_index = i
+                break
 
         timestamp_column = st.selectbox(
             "Select timestamp column",
             columns,
-            index=0
+            index=timestamp_default
         )
 
         actual_column = st.selectbox(
             "Select actual streams column",
             columns,
-            index=1 if len(columns) > 1 else 0
+            index=actual_default
         )
 
         baseline_column_options = ["Auto-estimate baseline"] + columns
 
+        baseline_default_index = 0
+        if baseline_guess_index is not None:
+            baseline_default_index = baseline_guess_index + 1
+
         baseline_column = st.selectbox(
             "Select expected baseline column",
             baseline_column_options,
-            index=0
+            index=baseline_default_index
         )
 
-        uploaded_df = uploaded_df.rename(columns={
+        if timestamp_column == actual_column:
+            st.error("Timestamp column and actual streams column cannot be the same column.")
+            st.stop()
+
+        if baseline_column != "Auto-estimate baseline" and baseline_column in [
+            timestamp_column,
+            actual_column
+        ]:
+            st.error("Expected baseline column must be different from timestamp and actual streams.")
+            st.stop()
+
+        working_df = uploaded_df.copy()
+
+        working_df = working_df.rename(columns={
             timestamp_column: "timestamp",
             actual_column: "actual_streams"
         })
 
-        uploaded_df["timestamp"] = pd.to_datetime(
-            uploaded_df["timestamp"],
+        working_df["timestamp"] = (
+            working_df["timestamp"]
+            .astype(str)
+            .str.replace("\n", " ", regex=False)
+            .str.replace("\r", " ", regex=False)
+        )
+
+        working_df["timestamp"] = pd.to_datetime(
+            working_df["timestamp"],
             errors="coerce"
         )
 
-        uploaded_df["actual_streams"] = pd.to_numeric(
-            uploaded_df["actual_streams"],
+        working_df["actual_streams"] = pd.to_numeric(
+            working_df["actual_streams"],
             errors="coerce"
         )
 
-        uploaded_df = uploaded_df.dropna(subset=["timestamp", "actual_streams"])
-        uploaded_df = uploaded_df.sort_values("timestamp")
+        working_df = working_df.dropna(subset=["timestamp", "actual_streams"])
+        working_df = working_df.sort_values("timestamp")
+
+        if working_df.empty:
+            st.error(
+                "The CSV uploaded, but no valid timestamp/stream rows were found. "
+                "Check that timestamps look like 2026-06-17 12:00:00 and streams are numbers."
+            )
+            st.stop()
 
         if baseline_column != "Auto-estimate baseline":
-            uploaded_df = uploaded_df.rename(columns={
+            working_df = working_df.rename(columns={
                 baseline_column: "expected_baseline_streams"
             })
 
-            uploaded_df["expected_baseline_streams"] = pd.to_numeric(
-                uploaded_df["expected_baseline_streams"],
+            working_df["expected_baseline_streams"] = pd.to_numeric(
+                working_df["expected_baseline_streams"],
                 errors="coerce"
             )
 
-            uploaded_df["expected_baseline_streams"] = uploaded_df[
+            working_df["expected_baseline_streams"] = working_df[
                 "expected_baseline_streams"
-            ].fillna(uploaded_df["actual_streams"].median())
+            ].fillna(working_df["actual_streams"].median())
 
         else:
             temp_impact_end = post_timestamp + timedelta(hours=impact_window_hours)
 
             non_impact_mask = (
-                (uploaded_df["timestamp"] < post_timestamp)
+                (working_df["timestamp"] < post_timestamp)
                 |
-                (uploaded_df["timestamp"] >= temp_impact_end)
+                (working_df["timestamp"] >= temp_impact_end)
             )
 
-            baseline_source = uploaded_df.loc[non_impact_mask].copy()
+            baseline_source = working_df.loc[non_impact_mask].copy()
 
             if baseline_source.empty:
-                uploaded_df["expected_baseline_streams"] = uploaded_df[
+                working_df["expected_baseline_streams"] = working_df[
                     "actual_streams"
                 ].median()
             else:
                 baseline_source["hour"] = baseline_source["timestamp"].dt.hour
+
                 hourly_profile = baseline_source.groupby("hour")[
                     "actual_streams"
                 ].median()
 
-                uploaded_df["hour"] = uploaded_df["timestamp"].dt.hour
+                working_df["hour"] = working_df["timestamp"].dt.hour
 
-                uploaded_df["expected_baseline_streams"] = (
-                    uploaded_df["hour"]
+                working_df["expected_baseline_streams"] = (
+                    working_df["hour"]
                     .map(hourly_profile)
                     .fillna(baseline_source["actual_streams"].median())
                 )
 
-                uploaded_df = uploaded_df.drop(columns=["hour"])
+                working_df = working_df.drop(columns=["hour"])
 
-        df = uploaded_df[[
+        df = working_df[[
             "timestamp",
             "expected_baseline_streams",
             "actual_streams"
