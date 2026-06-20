@@ -202,7 +202,6 @@ commerce_enabled = st.sidebar.checkbox(
     help="Estimate product revenue associated with the social/streaming impact window."
 )
 
-
 show_commerce_overlay = st.sidebar.checkbox(
     "Show Commerce Overlay on Streaming Chart",
     value=True,
@@ -225,185 +224,320 @@ commerce_overlay_metric = st.sidebar.selectbox(
     ],
     help="Choose what commerce metric should appear on the streaming trend chart."
 )
-revenue_attribution_method = st.sidebar.selectbox(
-    "Revenue Attribution Method",
+
+commerce_data_mode = st.sidebar.radio(
+    "Commerce Data Mode",
     [
-        "Manual attributed units",
-        "Estimate from social reach"
+        "Auto estimate from product categories",
+        "Manual dated sales entries",
+        "Commerce CSV upload"
     ],
-    help="Manual mode lets you type units sold. Estimate mode calculates units from social reach and purchase conversion assumptions."
+    help="Choose whether commerce revenue is estimated, manually entered by date/product, or uploaded from a CSV."
 )
 
 product_catalog = {
-    "Vinyl LP": {
-        "price": 29.99,
-        "cost": 11.00,
-        "units": 120,
-        "conversion": 0.025,
-        "fees": 8.0
-    },
-    "Limited Color Vinyl": {
-        "price": 34.99,
-        "cost": 13.00,
-        "units": 80,
-        "conversion": 0.018,
-        "fees": 8.0
-    },
-    "CD": {
-        "price": 14.99,
-        "cost": 4.00,
-        "units": 95,
-        "conversion": 0.015,
-        "fees": 7.0
-    },
-    "Cassette": {
-        "price": 12.99,
-        "cost": 3.50,
-        "units": 40,
-        "conversion": 0.008,
-        "fees": 7.0
-    },
-    "Deluxe Edition / Box Set": {
-        "price": 89.99,
-        "cost": 35.00,
-        "units": 25,
-        "conversion": 0.004,
-        "fees": 9.0
-    },
-    "Signed Physical Product": {
-        "price": 49.99,
-        "cost": 18.00,
-        "units": 35,
-        "conversion": 0.006,
-        "fees": 8.0
-    },
-    "Artist Apparel": {
-        "price": 35.00,
-        "cost": 12.00,
-        "units": 150,
-        "conversion": 0.030,
-        "fees": 10.0
-    },
-    "Accessories": {
-        "price": 18.00,
-        "cost": 6.00,
-        "units": 100,
-        "conversion": 0.020,
-        "fees": 10.0
-    },
-    "Poster / Print": {
-        "price": 25.00,
-        "cost": 7.00,
-        "units": 60,
-        "conversion": 0.012,
-        "fees": 8.0
-    },
-    "Merch Bundle": {
-        "price": 65.00,
-        "cost": 25.00,
-        "units": 45,
-        "conversion": 0.007,
-        "fees": 9.0
-    },
-    "Digital Album / Download": {
-        "price": 10.99,
-        "cost": 1.00,
-        "units": 75,
-        "conversion": 0.018,
-        "fees": 15.0
-    },
-    "Fan Club / Membership": {
-        "price": 9.99,
-        "cost": 1.50,
-        "units": 50,
-        "conversion": 0.010,
-        "fees": 12.0
-    },
-    "Ticket / VIP Upsell": {
-        "price": 75.00,
-        "cost": 25.00,
-        "units": 30,
-        "conversion": 0.005,
-        "fees": 10.0
-    }
+    "Vinyl LP": {"price": 29.99, "cost": 11.00, "units": 120, "conversion": 0.025, "fees": 8.0},
+    "Limited Color Vinyl": {"price": 34.99, "cost": 13.00, "units": 80, "conversion": 0.018, "fees": 8.0},
+    "CD": {"price": 14.99, "cost": 4.00, "units": 95, "conversion": 0.015, "fees": 7.0},
+    "Cassette": {"price": 12.99, "cost": 3.50, "units": 40, "conversion": 0.008, "fees": 7.0},
+    "Deluxe Edition / Box Set": {"price": 89.99, "cost": 35.00, "units": 25, "conversion": 0.004, "fees": 9.0},
+    "Signed Physical Product": {"price": 49.99, "cost": 18.00, "units": 35, "conversion": 0.006, "fees": 8.0},
+    "Artist Apparel": {"price": 35.00, "cost": 12.00, "units": 150, "conversion": 0.030, "fees": 10.0},
+    "Accessories": {"price": 18.00, "cost": 6.00, "units": 100, "conversion": 0.020, "fees": 10.0},
+    "Poster / Print": {"price": 25.00, "cost": 7.00, "units": 60, "conversion": 0.012, "fees": 8.0},
+    "Merch Bundle": {"price": 65.00, "cost": 25.00, "units": 45, "conversion": 0.007, "fees": 9.0},
+    "Digital Album / Download": {"price": 10.99, "cost": 1.00, "units": 75, "conversion": 0.018, "fees": 15.0},
+    "Fan Club / Membership": {"price": 9.99, "cost": 1.50, "units": 50, "conversion": 0.010, "fees": 12.0},
+    "Ticket / VIP Upsell": {"price": 75.00, "cost": 25.00, "units": 30, "conversion": 0.005, "fees": 10.0}
 }
-
-selected_products = st.sidebar.multiselect(
-    "Product Categories",
-    list(product_catalog.keys()),
-    default=[
-        "Vinyl LP",
-        "CD",
-        "Artist Apparel",
-        "Merch Bundle"
-    ],
-    help="Select the product categories you want to include in the revenue model."
-)
 
 commerce_rows = []
 
 if commerce_enabled:
-    for index, product_name in enumerate(selected_products):
-        defaults = product_catalog[product_name]
+    if commerce_data_mode == "Auto estimate from product categories":
+        revenue_attribution_method = st.sidebar.selectbox(
+            "Revenue Attribution Method",
+            [
+                "Manual attributed units",
+                "Estimate from social reach"
+            ],
+            help="Manual mode lets you type units sold. Estimate mode calculates units from social reach and purchase conversion assumptions."
+        )
 
-        with st.sidebar.expander(product_name, expanded=False):
-            average_selling_price = st.number_input(
-                f"{product_name} Avg Selling Price ($)",
-                min_value=0.0,
-                value=float(defaults["price"]),
-                step=1.0,
-                key=f"price_{index}"
-            )
+        selected_products = st.sidebar.multiselect(
+            "Product Categories",
+            list(product_catalog.keys()),
+            default=[
+                "Vinyl LP",
+                "CD",
+                "Artist Apparel",
+                "Merch Bundle"
+            ],
+            help="Select the product categories you want to include in the revenue model."
+        )
 
-            unit_cost = st.number_input(
-                f"{product_name} Unit Cost / COGS ($)",
-                min_value=0.0,
-                value=float(defaults["cost"]),
-                step=1.0,
-                key=f"cost_{index}"
-            )
+        for index, product_name in enumerate(selected_products):
+            defaults = product_catalog[product_name]
 
-            fee_rate = st.slider(
-                f"{product_name} Fees / Discounts (%)",
-                min_value=0.0,
-                max_value=50.0,
-                value=float(defaults["fees"]),
-                step=0.5,
-                key=f"fees_{index}"
-            )
-
-            if revenue_attribution_method == "Manual attributed units":
-                attributed_units = st.number_input(
-                    f"{product_name} Attributed Units Sold",
-                    min_value=0,
-                    value=int(defaults["units"]),
-                    step=1,
-                    key=f"units_{index}"
-                )
-            else:
-                purchase_conversion_rate = st.number_input(
-                    f"{product_name} Purchase Conversion Rate (%)",
+            with st.sidebar.expander(product_name, expanded=False):
+                average_selling_price = st.number_input(
+                    f"{product_name} Avg Selling Price ($)",
                     min_value=0.0,
-                    max_value=10.0,
-                    value=float(defaults["conversion"]),
-                    step=0.001,
-                    format="%.3f",
-                    key=f"conversion_{index}"
+                    value=float(defaults["price"]),
+                    step=1.0,
+                    key=f"auto_price_{index}"
                 )
 
-                attributed_units = int(
-                    round(manual_social_reach * (purchase_conversion_rate / 100))
+                unit_cost = st.number_input(
+                    f"{product_name} Unit Cost / COGS ($)",
+                    min_value=0.0,
+                    value=float(defaults["cost"]),
+                    step=1.0,
+                    key=f"auto_cost_{index}"
                 )
 
-                st.caption(f"Estimated units: {attributed_units:,}")
+                fee_rate = st.slider(
+                    f"{product_name} Fees / Discounts (%)",
+                    min_value=0.0,
+                    max_value=50.0,
+                    value=float(defaults["fees"]),
+                    step=0.5,
+                    key=f"auto_fees_{index}"
+                )
 
-            commerce_rows.append({
-                "Product Category": product_name,
-                "Attributed Units": attributed_units,
-                "Average Selling Price": average_selling_price,
-                "Unit Cost / COGS": unit_cost,
-                "Fee Rate (%)": fee_rate
-            })
+                if revenue_attribution_method == "Manual attributed units":
+                    attributed_units = st.number_input(
+                        f"{product_name} Attributed Units Sold",
+                        min_value=0,
+                        value=int(defaults["units"]),
+                        step=1,
+                        key=f"auto_units_{index}"
+                    )
+                else:
+                    purchase_conversion_rate = st.number_input(
+                        f"{product_name} Purchase Conversion Rate (%)",
+                        min_value=0.0,
+                        max_value=10.0,
+                        value=float(defaults["conversion"]),
+                        step=0.001,
+                        format="%.3f",
+                        key=f"auto_conversion_{index}"
+                    )
+
+                    attributed_units = int(
+                        round(manual_social_reach * (purchase_conversion_rate / 100))
+                    )
+
+                    st.caption(f"Estimated units: {attributed_units:,}")
+
+                commerce_rows.append({
+                    "Sale Date": post_timestamp.date(),
+                    "Product Category": product_name,
+                    "Attributed Units": attributed_units,
+                    "Average Selling Price": average_selling_price,
+                    "Unit Cost / COGS": unit_cost,
+                    "Fee Rate (%)": fee_rate,
+                    "Source": "Auto estimate"
+                })
+
+    elif commerce_data_mode == "Manual dated sales entries":
+        manual_commerce_row_count = st.sidebar.number_input(
+            "Number of Sales Rows",
+            min_value=1,
+            max_value=25,
+            value=5,
+            step=1,
+            help="Add dated sales rows by product category."
+        )
+
+        for row_index in range(manual_commerce_row_count):
+            with st.sidebar.expander(f"Sales Row {row_index + 1}", expanded=row_index == 0):
+                sale_date = st.date_input(
+                    "Sale Date",
+                    value=(post_timestamp + timedelta(days=row_index)).date(),
+                    key=f"manual_sale_date_{row_index}"
+                )
+
+                product_name = st.selectbox(
+                    "Product Category",
+                    list(product_catalog.keys()),
+                    index=row_index % len(product_catalog),
+                    key=f"manual_product_{row_index}"
+                )
+
+                defaults = product_catalog[product_name]
+
+                attributed_units = st.number_input(
+                    "Units Sold",
+                    min_value=0,
+                    value=int(defaults["units"] / 4),
+                    step=1,
+                    key=f"manual_units_{row_index}"
+                )
+
+                average_selling_price = st.number_input(
+                    "Average Selling Price ($)",
+                    min_value=0.0,
+                    value=float(defaults["price"]),
+                    step=1.0,
+                    key=f"manual_price_{row_index}"
+                )
+
+                unit_cost = st.number_input(
+                    "Unit Cost / COGS ($)",
+                    min_value=0.0,
+                    value=float(defaults["cost"]),
+                    step=1.0,
+                    key=f"manual_cost_{row_index}"
+                )
+
+                fee_rate = st.slider(
+                    "Fees / Discounts (%)",
+                    min_value=0.0,
+                    max_value=50.0,
+                    value=float(defaults["fees"]),
+                    step=0.5,
+                    key=f"manual_fee_{row_index}"
+                )
+
+                commerce_rows.append({
+                    "Sale Date": sale_date,
+                    "Product Category": product_name,
+                    "Attributed Units": attributed_units,
+                    "Average Selling Price": average_selling_price,
+                    "Unit Cost / COGS": unit_cost,
+                    "Fee Rate (%)": fee_rate,
+                    "Source": "Manual entry"
+                })
+
+    elif commerce_data_mode == "Commerce CSV upload":
+        commerce_csv_file = st.sidebar.file_uploader(
+            "Upload Commerce CSV",
+            type=["csv"],
+            key="commerce_csv_file",
+            help="Upload a CSV with date, product, units, price, cost, and fee columns."
+        )
+
+        with st.sidebar.expander("Commerce CSV format example"):
+            st.code(
+                """sale_date,product_category,units_sold,average_selling_price,unit_cost,fee_rate
+2026-06-17,Vinyl LP,45,29.99,11.00,8
+2026-06-18,Artist Apparel,32,35.00,12.00,10
+2026-06-19,Deluxe Edition / Box Set,8,89.99,35.00,9""",
+                language="csv"
+            )
+
+        if commerce_csv_file is not None:
+            try:
+                commerce_uploaded_df = pd.read_csv(commerce_csv_file)
+            except Exception:
+                commerce_csv_file.seek(0)
+                try:
+                    commerce_uploaded_df = pd.read_csv(commerce_csv_file, sep=None, engine="python")
+                except Exception:
+                    st.sidebar.error("The commerce CSV could not be read. Try exporting again as CSV.")
+                    commerce_uploaded_df = pd.DataFrame()
+
+            if not commerce_uploaded_df.empty:
+                commerce_uploaded_df.columns = [
+                    str(col).strip().replace("\n", " ").replace("\r", " ")
+                    for col in commerce_uploaded_df.columns
+                ]
+
+                st.sidebar.success("Commerce CSV uploaded.")
+
+                with st.sidebar.expander("Preview Commerce CSV"):
+                    st.dataframe(commerce_uploaded_df.head(10), use_container_width=True)
+                    st.write(list(commerce_uploaded_df.columns))
+
+                commerce_columns = list(commerce_uploaded_df.columns)
+                optional_columns = ["Use default / zero"] + commerce_columns
+
+                sale_date_column = st.sidebar.selectbox(
+                    "Select sale date column",
+                    commerce_columns,
+                    index=0
+                )
+
+                product_column = st.sidebar.selectbox(
+                    "Select product column",
+                    commerce_columns,
+                    index=1 if len(commerce_columns) > 1 else 0
+                )
+
+                units_column = st.sidebar.selectbox(
+                    "Select units sold column",
+                    commerce_columns,
+                    index=2 if len(commerce_columns) > 2 else 0
+                )
+
+                price_column = st.sidebar.selectbox(
+                    "Select average selling price column",
+                    commerce_columns,
+                    index=3 if len(commerce_columns) > 3 else 0
+                )
+
+                cost_column = st.sidebar.selectbox(
+                    "Select unit cost / COGS column",
+                    optional_columns,
+                    index=4 if len(optional_columns) > 4 else 0
+                )
+
+                fee_column = st.sidebar.selectbox(
+                    "Select fee / discount rate column",
+                    optional_columns,
+                    index=5 if len(optional_columns) > 5 else 0
+                )
+
+                working_commerce_df = commerce_uploaded_df.copy()
+
+                for _, row in working_commerce_df.iterrows():
+                    product_name = str(row[product_column])
+
+                    sale_date = pd.to_datetime(
+                        row[sale_date_column],
+                        errors="coerce"
+                    )
+
+                    if pd.isna(sale_date):
+                        continue
+
+                    attributed_units = pd.to_numeric(
+                        row[units_column],
+                        errors="coerce"
+                    )
+
+                    average_selling_price = pd.to_numeric(
+                        row[price_column],
+                        errors="coerce"
+                    )
+
+                    if pd.isna(attributed_units) or pd.isna(average_selling_price):
+                        continue
+
+                    if cost_column != "Use default / zero":
+                        unit_cost = pd.to_numeric(row[cost_column], errors="coerce")
+                        if pd.isna(unit_cost):
+                            unit_cost = 0
+                    else:
+                        unit_cost = 0
+
+                    if fee_column != "Use default / zero":
+                        fee_rate = pd.to_numeric(row[fee_column], errors="coerce")
+                        if pd.isna(fee_rate):
+                            fee_rate = 0
+                    else:
+                        fee_rate = 0
+
+                    commerce_rows.append({
+                        "Sale Date": sale_date.date(),
+                        "Product Category": product_name,
+                        "Attributed Units": int(attributed_units),
+                        "Average Selling Price": float(average_selling_price),
+                        "Unit Cost / COGS": float(unit_cost),
+                        "Fee Rate (%)": float(fee_rate),
+                        "Source": "CSV upload"
+                    })
 # -----------------------------
 # MOCK DATA GENERATION
 # -----------------------------
@@ -804,28 +938,75 @@ df.loc[df["lift_area"] < 0, "lift_area"] = 0
 # -----------------------------
 
 if commerce_enabled and len(commerce_rows) > 0:
-    product_df = pd.DataFrame(commerce_rows)
+    product_sales_detail_df = pd.DataFrame(commerce_rows)
 
-    product_df["Gross Revenue"] = (
-        product_df["Attributed Units"]
-        * product_df["Average Selling Price"]
+    product_sales_detail_df["Sale Date"] = pd.to_datetime(
+        product_sales_detail_df["Sale Date"],
+        errors="coerce"
     )
 
-    product_df["Total COGS"] = (
-        product_df["Attributed Units"]
-        * product_df["Unit Cost / COGS"]
+    product_sales_detail_df["Attributed Units"] = pd.to_numeric(
+        product_sales_detail_df["Attributed Units"],
+        errors="coerce"
+    ).fillna(0)
+
+    product_sales_detail_df["Average Selling Price"] = pd.to_numeric(
+        product_sales_detail_df["Average Selling Price"],
+        errors="coerce"
+    ).fillna(0)
+
+    product_sales_detail_df["Unit Cost / COGS"] = pd.to_numeric(
+        product_sales_detail_df["Unit Cost / COGS"],
+        errors="coerce"
+    ).fillna(0)
+
+    product_sales_detail_df["Fee Rate (%)"] = pd.to_numeric(
+        product_sales_detail_df["Fee Rate (%)"],
+        errors="coerce"
+    ).fillna(0)
+
+    product_sales_detail_df = product_sales_detail_df.dropna(subset=["Sale Date"])
+
+    product_sales_detail_df["Gross Revenue"] = (
+        product_sales_detail_df["Attributed Units"]
+        * product_sales_detail_df["Average Selling Price"]
     )
 
-    product_df["Fees / Discounts"] = (
-        product_df["Gross Revenue"]
-        * (product_df["Fee Rate (%)"] / 100)
+    product_sales_detail_df["Total COGS"] = (
+        product_sales_detail_df["Attributed Units"]
+        * product_sales_detail_df["Unit Cost / COGS"]
     )
 
-    product_df["Estimated Net Revenue"] = (
-        product_df["Gross Revenue"]
-        - product_df["Total COGS"]
-        - product_df["Fees / Discounts"]
+    product_sales_detail_df["Fees / Discounts"] = (
+        product_sales_detail_df["Gross Revenue"]
+        * (product_sales_detail_df["Fee Rate (%)"] / 100)
     )
+
+    product_sales_detail_df["Estimated Net Revenue"] = (
+        product_sales_detail_df["Gross Revenue"]
+        - product_sales_detail_df["Total COGS"]
+        - product_sales_detail_df["Fees / Discounts"]
+    )
+
+    product_sales_detail_df["Estimated Margin (%)"] = np.where(
+        product_sales_detail_df["Gross Revenue"] > 0,
+        (
+            product_sales_detail_df["Estimated Net Revenue"]
+            / product_sales_detail_df["Gross Revenue"]
+        ) * 100,
+        0
+    )
+
+    product_df = product_sales_detail_df.groupby("Product Category", as_index=False).agg({
+        "Attributed Units": "sum",
+        "Average Selling Price": "mean",
+        "Unit Cost / COGS": "mean",
+        "Fee Rate (%)": "mean",
+        "Gross Revenue": "sum",
+        "Total COGS": "sum",
+        "Fees / Discounts": "sum",
+        "Estimated Net Revenue": "sum"
+    })
 
     product_df["Estimated Margin (%)"] = np.where(
         product_df["Gross Revenue"] > 0,
@@ -833,9 +1014,17 @@ if commerce_enabled and len(commerce_rows) > 0:
         0
     )
 
-    total_product_units = product_df["Attributed Units"].sum()
-    total_product_gross_revenue = product_df["Gross Revenue"].sum()
-    total_product_net_revenue = product_df["Estimated Net Revenue"].sum()
+    product_daily_df = product_sales_detail_df.groupby("Sale Date", as_index=False).agg({
+        "Attributed Units": "sum",
+        "Gross Revenue": "sum",
+        "Estimated Net Revenue": "sum"
+    })
+
+    product_daily_df = product_daily_df.rename(columns={"Sale Date": "timestamp"})
+
+    total_product_units = product_sales_detail_df["Attributed Units"].sum()
+    total_product_gross_revenue = product_sales_detail_df["Gross Revenue"].sum()
+    total_product_net_revenue = product_sales_detail_df["Estimated Net Revenue"].sum()
 
     revenue_per_1k_social_views = (
         total_product_gross_revenue / (manual_social_reach / 1000)
@@ -850,43 +1039,14 @@ if commerce_enabled and len(commerce_rows) > 0:
     )
 
 else:
+    product_sales_detail_df = pd.DataFrame()
     product_df = pd.DataFrame()
+    product_daily_df = pd.DataFrame()
     total_product_units = 0
     total_product_gross_revenue = 0
     total_product_net_revenue = 0
     revenue_per_1k_social_views = 0
     revenue_per_lift_stream = 0
-
-# Manual demo override:
-# If selected, these sidebar numbers replace the simulated impact-window totals.
-if data_mode == "Manual demo inputs":
-    current_expected_total = df.loc[impact_mask, "expected_baseline_streams"].sum()
-    current_actual_total = df.loc[impact_mask, "actual_streams"].sum()
-
-    if current_expected_total > 0:
-        df.loc[impact_mask, "expected_baseline_streams"] *= (
-            manual_expected_streams / current_expected_total
-        )
-
-    if current_actual_total > 0:
-        df.loc[impact_mask, "actual_streams"] *= (
-            manual_actual_streams / current_actual_total
-        )
-
-    expected_streams = df.loc[impact_mask, "expected_baseline_streams"].sum()
-    actual_streams = df.loc[impact_mask, "actual_streams"].sum()
-    social_lift_streams = actual_streams - expected_streams
-
-    if expected_streams > 0:
-        lift_percent = (social_lift_streams / expected_streams) * 100
-    else:
-        lift_percent = 0
-
-    hourly_baseline_rate = expected_streams / impact_window_hours
-
-    df["lift_area"] = df["actual_streams"] - df["expected_baseline_streams"]
-    df.loc[df["lift_area"] < 0, "lift_area"] = 0
-
 # -----------------------------
 # MAIN PAGE
 # -----------------------------
@@ -1104,6 +1264,37 @@ if commerce_enabled and not product_df.empty:
         hide_index=True
     )
 
+        if not product_sales_detail_df.empty:
+        st.markdown("#### Dated Product Sales Detail")
+
+        display_detail_df = product_sales_detail_df.copy()
+
+        display_detail_df["Sale Date"] = display_detail_df["Sale Date"].dt.strftime("%Y-%m-%d")
+
+        detail_currency_columns = [
+            "Average Selling Price",
+            "Unit Cost / COGS",
+            "Gross Revenue",
+            "Total COGS",
+            "Fees / Discounts",
+            "Estimated Net Revenue"
+        ]
+
+        for column in detail_currency_columns:
+            display_detail_df[column] = display_detail_df[column].map(
+                lambda value: f"${value:,.2f}"
+            )
+
+        display_detail_df["Estimated Margin (%)"] = display_detail_df[
+            "Estimated Margin (%)"
+        ].map(lambda value: f"{value:,.1f}%")
+
+        st.dataframe(
+            display_detail_df,
+            use_container_width=True,
+            hide_index=True
+        )
+
     st.caption(
         f"Commerce model active: estimated ${total_product_gross_revenue:,.0f} "
         f"in attributed gross product revenue and ${total_product_net_revenue:,.0f} "
@@ -1130,44 +1321,70 @@ if (
     and show_commerce_overlay
     and not product_df.empty
 ):
-    commerce_overlay_dates = [
-        post_timestamp + timedelta(days=day)
-        for day in range(commerce_overlay_window_days)
-    ]
-
-    # A front-loaded decay curve: stronger commerce activity immediately after the post,
-    # then gradually tapering over the selected 7-day or 14-day window.
-    commerce_decay_weights = np.exp(
-        -np.linspace(0, 2.4, commerce_overlay_window_days)
-    )
-
-    commerce_decay_weights = commerce_decay_weights / commerce_decay_weights.sum()
-
     if commerce_overlay_metric == "Gross Product Revenue":
         commerce_overlay_total_value = total_product_gross_revenue
         commerce_overlay_label = "Projected Gross Product Revenue"
         commerce_overlay_axis_title = "Product Revenue ($)"
         commerce_overlay_hover_prefix = "$"
+        commerce_value_column = "Gross Revenue"
 
     elif commerce_overlay_metric == "Estimated Net Revenue":
         commerce_overlay_total_value = total_product_net_revenue
         commerce_overlay_label = "Projected Net Product Revenue"
         commerce_overlay_axis_title = "Product Revenue ($)"
         commerce_overlay_hover_prefix = "$"
+        commerce_value_column = "Estimated Net Revenue"
 
     else:
         commerce_overlay_total_value = total_product_units
         commerce_overlay_label = "Projected Attributed Units Sold"
         commerce_overlay_axis_title = "Attributed Product Units"
         commerce_overlay_hover_suffix = " units"
+        commerce_value_column = "Attributed Units"
 
-    commerce_overlay_values = commerce_overlay_total_value * commerce_decay_weights
+    if not product_daily_df.empty:
+        overlay_start = post_timestamp
+        overlay_end = post_timestamp + timedelta(days=commerce_overlay_window_days)
 
-    commerce_overlay_df = pd.DataFrame({
-        "timestamp": commerce_overlay_dates,
-        "commerce_value": commerce_overlay_values,
-        "cumulative_commerce_value": np.cumsum(commerce_overlay_values)
-    })
+        commerce_overlay_df = product_daily_df.copy()
+        commerce_overlay_df["timestamp"] = pd.to_datetime(
+            commerce_overlay_df["timestamp"],
+            errors="coerce"
+        )
+
+        commerce_overlay_df = commerce_overlay_df[
+            (commerce_overlay_df["timestamp"] >= overlay_start)
+            &
+            (commerce_overlay_df["timestamp"] < overlay_end)
+        ]
+
+        commerce_overlay_df = commerce_overlay_df.sort_values("timestamp")
+
+        if not commerce_overlay_df.empty:
+            commerce_overlay_df["commerce_value"] = commerce_overlay_df[commerce_value_column]
+            commerce_overlay_df["cumulative_commerce_value"] = commerce_overlay_df[
+                "commerce_value"
+            ].cumsum()
+
+    if commerce_overlay_df.empty and commerce_overlay_total_value > 0:
+        commerce_overlay_dates = [
+            post_timestamp + timedelta(days=day)
+            for day in range(commerce_overlay_window_days)
+        ]
+
+        commerce_decay_weights = np.exp(
+            -np.linspace(0, 2.4, commerce_overlay_window_days)
+        )
+
+        commerce_decay_weights = commerce_decay_weights / commerce_decay_weights.sum()
+
+        commerce_overlay_values = commerce_overlay_total_value * commerce_decay_weights
+
+        commerce_overlay_df = pd.DataFrame({
+            "timestamp": commerce_overlay_dates,
+            "commerce_value": commerce_overlay_values,
+            "cumulative_commerce_value": np.cumsum(commerce_overlay_values)
+        })
 fig = go.Figure()
 
 fig.add_trace(go.Scatter(
