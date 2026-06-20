@@ -1515,8 +1515,8 @@ if upscale_priority_enabled:
             if column not in upscale_input_df.columns:
                 if column == "Video Title":
                     upscale_input_df[column] = "Untitled Video"
-                    elif column == "ISRC":
-            upscale_input_df[column] = ""
+                elif column == "ISRC":
+                    upscale_input_df[column] = ""
                 elif column == "Content Format":
                     upscale_input_df[column] = "YouTube Music Video"
                 elif column == "Current Max Resolution":
@@ -1532,8 +1532,6 @@ if upscale_priority_enabled:
                     upscale_input_df[column] = 5
                 else:
                     upscale_input_df[column] = 0
-
-        upscale_input_df = upscale_input_df[upscale_columns]
 
     st.markdown("#### Video Candidate Inputs")
 
