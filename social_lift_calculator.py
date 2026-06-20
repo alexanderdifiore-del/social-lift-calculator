@@ -337,6 +337,7 @@ if upscale_priority_enabled:
             value=3,
             step=1,
             help="Higher weight prioritizes videos tied to deadlines, campaigns, anniversaries, or release moments."
+        )
         st.sidebar.markdown("---")
 st.sidebar.subheader("Commerce / Product Revenue")
 
