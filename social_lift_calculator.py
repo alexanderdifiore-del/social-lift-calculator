@@ -1375,6 +1375,31 @@ if (
 
         commerce_overlay_df = commerce_overlay_df.sort_values("timestamp")
 
+
+        # Add a starting point so commerce lines begin at the same left edge as the streaming chart.
+        chart_start_time = df["timestamp"].min()
+
+        if not commerce_overlay_df.empty:
+            starting_row = pd.DataFrame({
+                "timestamp": [chart_start_time],
+                "Attributed Units": [0],
+                "Gross Revenue": [0],
+                "Estimated Net Revenue": [0]
+            })
+
+            commerce_overlay_df = pd.concat(
+                [starting_row, commerce_overlay_df],
+                ignore_index=True
+            )
+
+            commerce_overlay_df = commerce_overlay_df.sort_values("timestamp")
+
+        if not commerce_overlay_df.empty:
+            commerce_overlay_df["commerce_value"] = commerce_overlay_df[commerce_value_column]
+            commerce_overlay_df["cumulative_commerce_value"] = commerce_overlay_df[
+                "commerce_value"
+            ].cumsum()
+
         if not commerce_overlay_df.empty:
             commerce_overlay_df["commerce_value"] = commerce_overlay_df[commerce_value_column]
             commerce_overlay_df["cumulative_commerce_value"] = commerce_overlay_df[
@@ -1457,7 +1482,7 @@ if not commerce_overlay_df.empty:
                 expected_commerce_baseline_percent / 100
             ),
             mode="lines",
-            name="Expected Commerce Baseline",
+            name="Expected Product Revenue Baseline",
             yaxis="y2",
             line=dict(width=2, dash="dash"),
             hovertemplate=(
@@ -1474,7 +1499,7 @@ if not commerce_overlay_df.empty:
         x=commerce_overlay_df["timestamp"],
         y=commerce_overlay_df["cumulative_commerce_value"],
         mode="lines+markers",
-        name=commerce_overlay_label,
+        name="Attributed Product Revenue",
         yaxis="y2",
         line=dict(width=3),
         hovertemplate=(
