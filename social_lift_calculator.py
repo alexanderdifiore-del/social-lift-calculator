@@ -132,6 +132,48 @@ analysis_days = st.sidebar.selectbox(
     index=0
 )
 
+st.sidebar.markdown("---")
+st.sidebar.subheader("Manual Demo Inputs")
+
+data_mode = st.sidebar.radio(
+    "Data Source Mode",
+    ["Auto simulation", "Manual demo inputs"],
+    help="Auto simulation generates fake hourly data. Manual demo inputs let you type fake campaign numbers yourself."
+)
+
+manual_expected_streams = st.sidebar.number_input(
+    "Manual Expected Streams",
+    min_value=0,
+    value=65000,
+    step=1000,
+    help="What streams would have been without the social post."
+)
+
+manual_actual_streams = st.sidebar.number_input(
+    "Manual Actual Streams",
+    min_value=0,
+    value=148000,
+    step=1000,
+    help="What streams happened after the social post."
+)
+
+manual_social_reach = st.sidebar.number_input(
+    "Manual Social Reach / Views",
+    min_value=0,
+    value=850000,
+    step=10000,
+    help="Fake TikTok/Reels/Shorts views or reach number for demo purposes."
+)
+
+manual_engagement_rate = st.sidebar.slider(
+    "Manual Engagement Rate (%)",
+    min_value=0.0,
+    max_value=25.0,
+    value=5.5,
+    step=0.1,
+    help="Fake engagement rate for the post."
+)
+
 # -----------------------------
 # MOCK DATA GENERATION
 # -----------------------------
@@ -271,6 +313,36 @@ hourly_baseline_rate = df["expected_baseline_streams"].mean()
 df["lift_area"] = df["actual_streams"] - df["expected_baseline_streams"]
 df.loc[df["lift_area"] < 0, "lift_area"] = 0
 
+# Manual demo override:
+# If selected, these sidebar numbers replace the simulated impact-window totals.
+if data_mode == "Manual demo inputs":
+    current_expected_total = df.loc[impact_mask, "expected_baseline_streams"].sum()
+    current_actual_total = df.loc[impact_mask, "actual_streams"].sum()
+
+    if current_expected_total > 0:
+        df.loc[impact_mask, "expected_baseline_streams"] *= (
+            manual_expected_streams / current_expected_total
+        )
+
+    if current_actual_total > 0:
+        df.loc[impact_mask, "actual_streams"] *= (
+            manual_actual_streams / current_actual_total
+        )
+
+    expected_streams = df.loc[impact_mask, "expected_baseline_streams"].sum()
+    actual_streams = df.loc[impact_mask, "actual_streams"].sum()
+    social_lift_streams = actual_streams - expected_streams
+
+    if expected_streams > 0:
+        lift_percent = (social_lift_streams / expected_streams) * 100
+    else:
+        lift_percent = 0
+
+    hourly_baseline_rate = expected_streams / impact_window_hours
+
+    df["lift_area"] = df["actual_streams"] - df["expected_baseline_streams"]
+    df.loc[df["lift_area"] < 0, "lift_area"] = 0
+
 # -----------------------------
 # MAIN PAGE
 # -----------------------------
@@ -317,6 +389,66 @@ col1.metric("Hourly Baseline Rate", f"{hourly_baseline_rate:,.0f}")
 col2.metric(f"Actual Streams ({impact_window_hours}h)", f"{actual_streams:,.0f}")
 col3.metric(f"Expected Streams ({impact_window_hours}h)", f"{expected_streams:,.0f}")
 col4.metric("Estimated Social Lift", f"{social_lift_streams:,.0f}", f"{lift_percent:,.1f}%")
+
+st.markdown("### Impact Window Summary")
+
+summary_df = pd.DataFrame({
+    "Metric": [
+        "Expected Baseline",
+        "Actual Streams",
+        "Estimated Social Lift"
+    ],
+    "Streams": [
+        expected_streams,
+        actual_streams,
+        social_lift_streams
+    ]
+})
+
+bar_fig = go.Figure()
+
+bar_fig.add_trace(go.Bar(
+    x=summary_df["Metric"],
+    y=summary_df["Streams"],
+    text=[f"{x:,.0f}" for x in summary_df["Streams"]],
+    textposition="outside",
+    marker=dict(
+        color=[
+            "rgba(143, 252, 255, 0.45)",
+            "rgba(143, 252, 255, 0.90)",
+            "rgba(88, 255, 166, 0.85)"
+        ],
+        line=dict(
+            color="rgba(255,255,255,0.35)",
+            width=1
+        )
+    )
+))
+
+bar_fig.update_layout(
+    title="Campaign Performance Summary",
+    xaxis_title="Metric",
+    yaxis_title="Streams",
+    template="plotly_dark",
+    height=420,
+    margin=dict(l=40, r=40, t=70, b=40),
+    paper_bgcolor="rgba(0,0,0,0)",
+    plot_bgcolor="rgba(0,0,0,0)",
+    font=dict(
+        family="Helvetica Neue, Arial, sans-serif",
+        color="rgba(255,255,255,0.86)"
+    )
+)
+
+st.plotly_chart(bar_fig, use_container_width=True)
+
+if data_mode == "Manual demo inputs":
+    st.caption(
+        f"Manual demo mode active: reach/views set to {manual_social_reach:,.0f} "
+        f"with {manual_engagement_rate:.1f}% engagement."
+    )
+else:
+    st.caption("Auto simulation mode active: values are generated from the model assumptions.")
 
 # -----------------------------
 # CHART
