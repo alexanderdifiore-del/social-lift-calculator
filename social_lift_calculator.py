@@ -60,7 +60,15 @@ st.sidebar.subheader("Social Post Event")
 
 platform = st.sidebar.selectbox(
     "Platform",
-    ["TikTok", "Instagram Reels", "YouTube Shorts"]
+    [
+    "TikTok",
+    "Instagram Reels",
+    "YouTube Shorts",
+    "YouTube Video",
+    "YouTube Visualizer",
+    "YouTube Music Video",
+    "YouTube Live Performance"
+]
 )
 
 post_type = st.sidebar.selectbox(
@@ -574,9 +582,12 @@ tier_multiplier = {
 platform_multiplier = {
     "TikTok": 1.65,
     "Instagram Reels": 1.35,
-    "YouTube Shorts": 1.45
+    "YouTube Shorts": 1.45,
+    "YouTube Video": 1.20,
+    "YouTube Visualizer": 1.15,
+    "YouTube Music Video": 1.30,
+    "YouTube Live Performance": 1.25
 }[platform]
-
 market_multiplier = {
     "US": 1.25,
     "Global": 1.0,
