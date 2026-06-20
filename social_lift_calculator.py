@@ -1263,8 +1263,7 @@ if commerce_enabled and not product_df.empty:
         use_container_width=True,
         hide_index=True
     )
-
-        if not product_sales_detail_df.empty:
+    if not product_sales_detail_df.empty:
         st.markdown("#### Dated Product Sales Detail")
 
         display_detail_df = product_sales_detail_df.copy()
@@ -1294,6 +1293,7 @@ if commerce_enabled and not product_df.empty:
             use_container_width=True,
             hide_index=True
         )
+        
 
     st.caption(
         f"Commerce model active: estimated ${total_product_gross_revenue:,.0f} "
