@@ -1118,7 +1118,56 @@ else:
 # -----------------------------
 # CHART
 # -----------------------------
+# Commerce overlay projection for the streaming trend chart
+commerce_overlay_df = pd.DataFrame()
+commerce_overlay_label = ""
+commerce_overlay_axis_title = ""
+commerce_overlay_hover_prefix = ""
+commerce_overlay_hover_suffix = ""
 
+if (
+    commerce_enabled
+    and show_commerce_overlay
+    and not product_df.empty
+):
+    commerce_overlay_dates = [
+        post_timestamp + timedelta(days=day)
+        for day in range(commerce_overlay_window_days)
+    ]
+
+    # A front-loaded decay curve: stronger commerce activity immediately after the post,
+    # then gradually tapering over the selected 7-day or 14-day window.
+    commerce_decay_weights = np.exp(
+        -np.linspace(0, 2.4, commerce_overlay_window_days)
+    )
+
+    commerce_decay_weights = commerce_decay_weights / commerce_decay_weights.sum()
+
+    if commerce_overlay_metric == "Gross Product Revenue":
+        commerce_overlay_total_value = total_product_gross_revenue
+        commerce_overlay_label = "Projected Gross Product Revenue"
+        commerce_overlay_axis_title = "Product Revenue ($)"
+        commerce_overlay_hover_prefix = "$"
+
+    elif commerce_overlay_metric == "Estimated Net Revenue":
+        commerce_overlay_total_value = total_product_net_revenue
+        commerce_overlay_label = "Projected Net Product Revenue"
+        commerce_overlay_axis_title = "Product Revenue ($)"
+        commerce_overlay_hover_prefix = "$"
+
+    else:
+        commerce_overlay_total_value = total_product_units
+        commerce_overlay_label = "Projected Attributed Units Sold"
+        commerce_overlay_axis_title = "Attributed Product Units"
+        commerce_overlay_hover_suffix = " units"
+
+    commerce_overlay_values = commerce_overlay_total_value * commerce_decay_weights
+
+    commerce_overlay_df = pd.DataFrame({
+        "timestamp": commerce_overlay_dates,
+        "commerce_value": commerce_overlay_values,
+        "cumulative_commerce_value": np.cumsum(commerce_overlay_values)
+    })
 fig = go.Figure()
 
 fig.add_trace(go.Scatter(
@@ -1168,7 +1217,39 @@ fig.add_vrect(
     annotation_text=f"{impact_window_hours}h Impact Window",
     annotation_position="top left"
 )
+if not commerce_overlay_df.empty:
+    fig.add_trace(go.Bar(
+        x=commerce_overlay_df["timestamp"],
+        y=commerce_overlay_df["commerce_value"],
+        name=commerce_overlay_label,
+        yaxis="y2",
+        opacity=0.35,
+        hovertemplate=(
+            "Date: %{x}<br>"
+            + commerce_overlay_label
+            + ": "
+            + commerce_overlay_hover_prefix
+            + "%{y:,.0f}"
+            + commerce_overlay_hover_suffix
+            + "<extra></extra>"
+        )
+    ))
 
+    fig.add_trace(go.Scatter(
+        x=commerce_overlay_df["timestamp"],
+        y=commerce_overlay_df["cumulative_commerce_value"],
+        mode="lines+markers",
+        name=f"Cumulative {commerce_overlay_label}",
+        yaxis="y2",
+        hovertemplate=(
+            "Date: %{x}<br>"
+            "Cumulative: "
+            + commerce_overlay_hover_prefix
+            + "%{y:,.0f}"
+            + commerce_overlay_hover_suffix
+            + "<extra></extra>"
+        )
+    ))
 if multi_post:
     fig.add_vline(
         x=second_post_timestamp,
@@ -1182,6 +1263,12 @@ fig.update_layout(
     title=f"{song_title} Streaming Trend: Expected vs Actual",
     xaxis_title="Date / Time",
     yaxis_title="Hourly Streams",
+            yaxis2=dict(
+            title=commerce_overlay_axis_title,
+            overlaying="y",
+            side="right",
+            showgrid=False
+        ) if not commerce_overlay_df.empty else None,
     legend_title="Chart Labels",
     hovermode="x unified",
     template="plotly_white",
