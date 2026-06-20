@@ -1772,7 +1772,6 @@ if upscale_priority_enabled:
     score_df["Ease Score"] = (11 - score_df["Upscale Difficulty (1-10)"]) * 10
     score_df["Urgency Score"] = score_df["Urgency / Deadline (1-10)"] * 10
 
-    score_df["Upscale Priority Score"] = (
     total_upscale_weight = (
         quality_gap_weight
         + lifetime_demand_weight
@@ -1799,16 +1798,6 @@ if upscale_priority_enabled:
         + score_df["Ease Score"] * ease_weight
         + score_df["Urgency Score"] * urgency_weight
     ) / total_upscale_weight
-        + score_df["Lifetime Demand Score"] * 0.15
-        + score_df["Recent Momentum Score"] * 0.15
-        + score_df["Engagement Score"] * 0.08
-        + score_df["Catalog Priority Score"] * 0.14
-        + score_df["Commercial Upside Score"] * 0.12
-        + score_df["Readiness Score"] * 0.10
-        + score_df["Ease Score"] * 0.05
-        + score_df["Urgency Score"] * 0.03
-    )
-
     def upscale_priority_tier(score):
         if score >= 80:
             return "Immediate Priority"
