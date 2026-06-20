@@ -4,9 +4,36 @@ import numpy as np
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 
-st.set_page_config(
-    page_title="lollie",
-    layout="wide"
+st.markdown(
+    """
+    <style>
+    .lollie-title {
+        font-size: 4.4rem;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        color: #8ffcff;
+        margin-bottom: 0.1rem;
+        text-shadow:
+            0 0 8px rgba(143, 252, 255, 0.8),
+            0 0 18px rgba(143, 252, 255, 0.45),
+            0 0 32px rgba(143, 252, 255, 0.25);
+        font-family: "Helvetica Neue", Arial, sans-serif;
+    }
+
+    .lollie-subtitle {
+        font-size: 0.95rem;
+        color: rgba(255, 255, 255, 0.62);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin-top: -0.4rem;
+        margin-bottom: 2rem;
+    }
+    </style>
+
+    <div class="lollie-title">lollie</div>
+    <div class="lollie-subtitle">social streaming lift intelligence</div>
+    """,
+    unsafe_allow_html=True
 )
 
 # -----------------------------
