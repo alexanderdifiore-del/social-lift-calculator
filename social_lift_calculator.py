@@ -1450,7 +1450,7 @@ fig.add_vrect(
     annotation_position="top left"
 )
 if not commerce_overlay_df.empty:
-        if show_commerce_baseline_line:
+    if show_commerce_baseline_line:
         fig.add_trace(go.Scatter(
             x=commerce_overlay_df["timestamp"],
             y=commerce_overlay_df["cumulative_commerce_value"] * (
@@ -1469,6 +1469,7 @@ if not commerce_overlay_df.empty:
                 + "<extra></extra>"
             )
         ))
+
     fig.add_trace(go.Scatter(
         x=commerce_overlay_df["timestamp"],
         y=commerce_overlay_df["cumulative_commerce_value"],
