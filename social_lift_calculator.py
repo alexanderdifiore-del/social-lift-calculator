@@ -243,10 +243,10 @@ if upscale_priority_enabled:
 
         with st.sidebar.expander("Upscale CSV format example"):
             st.code(
-                """video_title,content_format,current_resolution,current_youtube_views,last_28_day_views,engagement_rate,catalog_priority,commercial_upside,asset_readiness,rights_confidence,upscale_difficulty,urgency
-Example Music Video,YouTube Music Video,480p,12500000,240000,4.8,9,8,7,9,4,8
-Example Live Performance,YouTube Live Performance,720p,3200000,85000,5.2,7,6,8,8,5,6
-Example Visualizer,YouTube Visualizer,1080p,950000,18000,3.1,5,5,9,9,2,4""",
+                """video_title,isrc,content_format,current_resolution,current_youtube_views,last_28_day_views,engagement_rate,catalog_priority,commercial_upside,asset_readiness,rights_confidence,upscale_difficulty,urgency
+Example Music Video,USDEMO000001,YouTube Music Video,480p,12500000,240000,4.8,9,8,7,9,4,8
+Example Live Performance,USDEMO000002,YouTube Live Performance,720p,3200000,85000,5.2,7,6,8,8,5,6
+Example Visualizer,USDEMO000003,YouTube Visualizer,1080p,950000,18000,3.1,5,5,9,9,2,4""",
                 language="csv"
             )
 st.sidebar.markdown("---")
@@ -1395,6 +1395,7 @@ if upscale_priority_enabled:
 
     upscale_columns = [
         "Video Title",
+        "ISRC",
         "Content Format",
         "Current Max Resolution",
         "Current YouTube Views",
@@ -1437,6 +1438,7 @@ if upscale_priority_enabled:
         for row_index in range(int(upscale_candidate_count)):
             default_upscale_rows.append({
                 "Video Title": f"Video Candidate {row_index + 1}",
+                "ISRC": f"USDEMO{row_index + 1:06d}",
                 "Content Format": content_format_options[row_index % len(content_format_options)],
                 "Current Max Resolution": "480p" if row_index == 0 else "720p",
                 "Current YouTube Views": 1000000 * (row_index + 1),
@@ -1479,6 +1481,8 @@ if upscale_priority_enabled:
             upscale_column_aliases = {
                 "video_title": "Video Title",
                 "title": "Video Title",
+                "isrc": "ISRC",
+                "isrc_code": "ISRC",
                 "content_format": "Content Format",
                 "format": "Content Format",
                 "current_resolution": "Current Max Resolution",
@@ -1511,6 +1515,8 @@ if upscale_priority_enabled:
             if column not in upscale_input_df.columns:
                 if column == "Video Title":
                     upscale_input_df[column] = "Untitled Video"
+                elif column == "ISRC":
+            upscale_input_df[column] = ""
                 elif column == "Content Format":
                     upscale_input_df[column] = "YouTube Music Video"
                 elif column == "Current Max Resolution":
@@ -1539,6 +1545,10 @@ if upscale_priority_enabled:
             "Video Title": st.column_config.TextColumn(
                 "Video Title",
                 help="Name of the YouTube video, performance, visualizer, or asset."
+            ),
+            "ISRC": st.column_config.TextColumn(
+                "ISRC",
+                help="International Standard Recording Code tied to the audio recording."
             ),
             "Content Format": st.column_config.SelectboxColumn(
                 "Content Format",
@@ -1774,6 +1784,7 @@ if upscale_priority_enabled:
     display_upscale_df = ranked_upscale_df[[
         "Rank",
         "Video Title",
+        "ISRC",
         "Content Format",
         "Current Max Resolution",
         "Current YouTube Views",
