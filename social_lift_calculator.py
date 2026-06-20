@@ -225,6 +225,21 @@ commerce_overlay_metric = st.sidebar.selectbox(
     help="Choose what commerce metric should appear on the streaming trend chart."
 )
 
+
+show_commerce_baseline_line = st.sidebar.checkbox(
+    "Show Commerce Baseline Line",
+    value=True,
+    help="Show an estimated baseline for product revenue or units without the social/streaming spike."
+)
+
+expected_commerce_baseline_percent = st.sidebar.slider(
+    "Commerce Baseline Share (%)",
+    min_value=0.0,
+    max_value=100.0,
+    value=35.0,
+    step=5.0,
+    help="Estimate what percentage of the commerce result may have happened without the social/streaming spike."
+)
 commerce_data_mode = st.sidebar.radio(
     "Commerce Data Mode",
     [
@@ -1435,6 +1450,25 @@ fig.add_vrect(
     annotation_position="top left"
 )
 if not commerce_overlay_df.empty:
+        if show_commerce_baseline_line:
+        fig.add_trace(go.Scatter(
+            x=commerce_overlay_df["timestamp"],
+            y=commerce_overlay_df["cumulative_commerce_value"] * (
+                expected_commerce_baseline_percent / 100
+            ),
+            mode="lines",
+            name="Expected Commerce Baseline",
+            yaxis="y2",
+            line=dict(width=2, dash="dash"),
+            hovertemplate=(
+                "Date: %{x}<br>"
+                "Expected Commerce Baseline: "
+                + commerce_overlay_hover_prefix
+                + "%{y:,.0f}"
+                + commerce_overlay_hover_suffix
+                + "<extra></extra>"
+            )
+        ))
     fig.add_trace(go.Scatter(
         x=commerce_overlay_df["timestamp"],
         y=commerce_overlay_df["cumulative_commerce_value"],
