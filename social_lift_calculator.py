@@ -202,6 +202,29 @@ commerce_enabled = st.sidebar.checkbox(
     help="Estimate product revenue associated with the social/streaming impact window."
 )
 
+
+show_commerce_overlay = st.sidebar.checkbox(
+    "Show Commerce Overlay on Streaming Chart",
+    value=True,
+    help="Overlay projected product revenue or product sales onto the streaming trend chart."
+)
+
+commerce_overlay_window_days = st.sidebar.selectbox(
+    "Commerce Overlay Window",
+    [7, 14],
+    index=0,
+    help="How far after the social post to show projected commerce impact."
+)
+
+commerce_overlay_metric = st.sidebar.selectbox(
+    "Commerce Overlay Metric",
+    [
+        "Gross Product Revenue",
+        "Estimated Net Revenue",
+        "Attributed Units Sold"
+    ],
+    help="Choose what commerce metric should appear on the streaming trend chart."
+)
 revenue_attribution_method = st.sidebar.selectbox(
     "Revenue Attribution Method",
     [
