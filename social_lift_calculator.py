@@ -192,6 +192,195 @@ manual_engagement_rate = st.sidebar.slider(
     help="Fake engagement rate for the post."
 )
 
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("Commerce / Product Revenue")
+
+commerce_enabled = st.sidebar.checkbox(
+    "Enable Commerce Revenue Tracking",
+    value=True,
+    help="Estimate product revenue associated with the social/streaming impact window."
+)
+
+revenue_attribution_method = st.sidebar.selectbox(
+    "Revenue Attribution Method",
+    [
+        "Manual attributed units",
+        "Estimate from social reach"
+    ],
+    help="Manual mode lets you type units sold. Estimate mode calculates units from social reach and purchase conversion assumptions."
+)
+
+product_catalog = {
+    "Vinyl LP": {
+        "price": 29.99,
+        "cost": 11.00,
+        "units": 120,
+        "conversion": 0.025,
+        "fees": 8.0
+    },
+    "Limited Color Vinyl": {
+        "price": 34.99,
+        "cost": 13.00,
+        "units": 80,
+        "conversion": 0.018,
+        "fees": 8.0
+    },
+    "CD": {
+        "price": 14.99,
+        "cost": 4.00,
+        "units": 95,
+        "conversion": 0.015,
+        "fees": 7.0
+    },
+    "Cassette": {
+        "price": 12.99,
+        "cost": 3.50,
+        "units": 40,
+        "conversion": 0.008,
+        "fees": 7.0
+    },
+    "Deluxe Edition / Box Set": {
+        "price": 89.99,
+        "cost": 35.00,
+        "units": 25,
+        "conversion": 0.004,
+        "fees": 9.0
+    },
+    "Signed Physical Product": {
+        "price": 49.99,
+        "cost": 18.00,
+        "units": 35,
+        "conversion": 0.006,
+        "fees": 8.0
+    },
+    "Artist Apparel": {
+        "price": 35.00,
+        "cost": 12.00,
+        "units": 150,
+        "conversion": 0.030,
+        "fees": 10.0
+    },
+    "Accessories": {
+        "price": 18.00,
+        "cost": 6.00,
+        "units": 100,
+        "conversion": 0.020,
+        "fees": 10.0
+    },
+    "Poster / Print": {
+        "price": 25.00,
+        "cost": 7.00,
+        "units": 60,
+        "conversion": 0.012,
+        "fees": 8.0
+    },
+    "Merch Bundle": {
+        "price": 65.00,
+        "cost": 25.00,
+        "units": 45,
+        "conversion": 0.007,
+        "fees": 9.0
+    },
+    "Digital Album / Download": {
+        "price": 10.99,
+        "cost": 1.00,
+        "units": 75,
+        "conversion": 0.018,
+        "fees": 15.0
+    },
+    "Fan Club / Membership": {
+        "price": 9.99,
+        "cost": 1.50,
+        "units": 50,
+        "conversion": 0.010,
+        "fees": 12.0
+    },
+    "Ticket / VIP Upsell": {
+        "price": 75.00,
+        "cost": 25.00,
+        "units": 30,
+        "conversion": 0.005,
+        "fees": 10.0
+    }
+}
+
+selected_products = st.sidebar.multiselect(
+    "Product Categories",
+    list(product_catalog.keys()),
+    default=[
+        "Vinyl LP",
+        "CD",
+        "Artist Apparel",
+        "Merch Bundle"
+    ],
+    help="Select the product categories you want to include in the revenue model."
+)
+
+commerce_rows = []
+
+if commerce_enabled:
+    for index, product_name in enumerate(selected_products):
+        defaults = product_catalog[product_name]
+
+        with st.sidebar.expander(product_name, expanded=False):
+            average_selling_price = st.number_input(
+                f"{product_name} Avg Selling Price ($)",
+                min_value=0.0,
+                value=float(defaults["price"]),
+                step=1.0,
+                key=f"price_{index}"
+            )
+
+            unit_cost = st.number_input(
+                f"{product_name} Unit Cost / COGS ($)",
+                min_value=0.0,
+                value=float(defaults["cost"]),
+                step=1.0,
+                key=f"cost_{index}"
+            )
+
+            fee_rate = st.slider(
+                f"{product_name} Fees / Discounts (%)",
+                min_value=0.0,
+                max_value=50.0,
+                value=float(defaults["fees"]),
+                step=0.5,
+                key=f"fees_{index}"
+            )
+
+            if revenue_attribution_method == "Manual attributed units":
+                attributed_units = st.number_input(
+                    f"{product_name} Attributed Units Sold",
+                    min_value=0,
+                    value=int(defaults["units"]),
+                    step=1,
+                    key=f"units_{index}"
+                )
+            else:
+                purchase_conversion_rate = st.number_input(
+                    f"{product_name} Purchase Conversion Rate (%)",
+                    min_value=0.0,
+                    max_value=10.0,
+                    value=float(defaults["conversion"]),
+                    step=0.001,
+                    format="%.3f",
+                    key=f"conversion_{index}"
+                )
+
+                attributed_units = int(
+                    round(manual_social_reach * (purchase_conversion_rate / 100))
+                )
+
+                st.caption(f"Estimated units: {attributed_units:,}")
+
+            commerce_rows.append({
+                "Product Category": product_name,
+                "Attributed Units": attributed_units,
+                "Average Selling Price": average_selling_price,
+                "Unit Cost / COGS": unit_cost,
+                "Fee Rate (%)": fee_rate
+            })
 # -----------------------------
 # MOCK DATA GENERATION
 # -----------------------------
@@ -587,6 +776,64 @@ hourly_baseline_rate = df["expected_baseline_streams"].mean()
 df["lift_area"] = df["actual_streams"] - df["expected_baseline_streams"]
 df.loc[df["lift_area"] < 0, "lift_area"] = 0
 
+# -----------------------------
+# COMMERCE REVENUE MODEL
+# -----------------------------
+
+if commerce_enabled and len(commerce_rows) > 0:
+    product_df = pd.DataFrame(commerce_rows)
+
+    product_df["Gross Revenue"] = (
+        product_df["Attributed Units"]
+        * product_df["Average Selling Price"]
+    )
+
+    product_df["Total COGS"] = (
+        product_df["Attributed Units"]
+        * product_df["Unit Cost / COGS"]
+    )
+
+    product_df["Fees / Discounts"] = (
+        product_df["Gross Revenue"]
+        * (product_df["Fee Rate (%)"] / 100)
+    )
+
+    product_df["Estimated Net Revenue"] = (
+        product_df["Gross Revenue"]
+        - product_df["Total COGS"]
+        - product_df["Fees / Discounts"]
+    )
+
+    product_df["Estimated Margin (%)"] = np.where(
+        product_df["Gross Revenue"] > 0,
+        (product_df["Estimated Net Revenue"] / product_df["Gross Revenue"]) * 100,
+        0
+    )
+
+    total_product_units = product_df["Attributed Units"].sum()
+    total_product_gross_revenue = product_df["Gross Revenue"].sum()
+    total_product_net_revenue = product_df["Estimated Net Revenue"].sum()
+
+    revenue_per_1k_social_views = (
+        total_product_gross_revenue / (manual_social_reach / 1000)
+        if manual_social_reach > 0
+        else 0
+    )
+
+    revenue_per_lift_stream = (
+        total_product_gross_revenue / social_lift_streams
+        if social_lift_streams > 0
+        else 0
+    )
+
+else:
+    product_df = pd.DataFrame()
+    total_product_units = 0
+    total_product_gross_revenue = 0
+    total_product_net_revenue = 0
+    revenue_per_1k_social_views = 0
+    revenue_per_lift_stream = 0
+
 # Manual demo override:
 # If selected, these sidebar numbers replace the simulated impact-window totals.
 if data_mode == "Manual demo inputs":
@@ -727,6 +974,123 @@ elif data_mode == "CSV upload":
     st.caption("CSV upload mode selected, but no file has been uploaded yet. Showing simulated data.")
 else:
     st.caption("Auto simulation mode active: values are generated from the model assumptions.")
+
+# -----------------------------
+# COMMERCE REVENUE DASHBOARD
+# -----------------------------
+
+if commerce_enabled and not product_df.empty:
+    st.markdown("### Commerce Revenue Attribution")
+
+    revenue_col1, revenue_col2, revenue_col3, revenue_col4 = st.columns(4)
+
+    revenue_col1.metric(
+        "Attributed Product Revenue",
+        f"${total_product_gross_revenue:,.0f}"
+    )
+
+    revenue_col2.metric(
+        "Estimated Net Revenue",
+        f"${total_product_net_revenue:,.0f}"
+    )
+
+    revenue_col3.metric(
+        "Attributed Units Sold",
+        f"{total_product_units:,.0f}"
+    )
+
+    revenue_col4.metric(
+        "Revenue per 1K Social Views",
+        f"${revenue_per_1k_social_views:,.2f}"
+    )
+
+    commerce_fig = go.Figure()
+
+    commerce_fig.add_trace(go.Bar(
+        x=product_df["Product Category"],
+        y=product_df["Gross Revenue"],
+        name="Gross Revenue",
+        text=[f"${x:,.0f}" for x in product_df["Gross Revenue"]],
+        textposition="outside",
+        marker=dict(
+            color="rgba(143, 252, 255, 0.75)",
+            line=dict(
+                color="rgba(255,255,255,0.35)",
+                width=1
+            )
+        )
+    ))
+
+    commerce_fig.add_trace(go.Bar(
+        x=product_df["Product Category"],
+        y=product_df["Estimated Net Revenue"],
+        name="Estimated Net Revenue",
+        text=[f"${x:,.0f}" for x in product_df["Estimated Net Revenue"]],
+        textposition="outside",
+        marker=dict(
+            color="rgba(88, 255, 166, 0.75)",
+            line=dict(
+                color="rgba(255,255,255,0.35)",
+                width=1
+            )
+        )
+    ))
+
+    commerce_fig.update_layout(
+        title="Attributed Product Revenue by Category",
+        xaxis_title="Product Category",
+        yaxis_title="Revenue ($)",
+        barmode="group",
+        template="plotly_dark",
+        height=500,
+        margin=dict(l=40, r=40, t=80, b=120),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(
+            family="Helvetica Neue, Arial, sans-serif",
+            color="rgba(255,255,255,0.86)"
+        ),
+        legend_title="Revenue Type"
+    )
+
+    st.plotly_chart(commerce_fig, use_container_width=True)
+
+    display_product_df = product_df.copy()
+
+    currency_columns = [
+        "Average Selling Price",
+        "Unit Cost / COGS",
+        "Gross Revenue",
+        "Total COGS",
+        "Fees / Discounts",
+        "Estimated Net Revenue"
+    ]
+
+    for column in currency_columns:
+        display_product_df[column] = display_product_df[column].map(
+            lambda value: f"${value:,.2f}"
+        )
+
+    display_product_df["Estimated Margin (%)"] = display_product_df[
+        "Estimated Margin (%)"
+    ].map(lambda value: f"{value:,.1f}%")
+
+    st.dataframe(
+        display_product_df,
+        use_container_width=True,
+        hide_index=True
+    )
+
+    st.caption(
+        f"Commerce model active: estimated ${total_product_gross_revenue:,.0f} "
+        f"in attributed gross product revenue and ${total_product_net_revenue:,.0f} "
+        f"in estimated net revenue. Revenue per lift stream is approximately "
+        f"${revenue_per_lift_stream:,.2f}."
+    )
+else:
+    st.info(
+        "Commerce revenue tracking is currently off. Enable it in the sidebar to model merch, physical product, and other campaign-related sales."
+    )
 
 # -----------------------------
 # CHART
