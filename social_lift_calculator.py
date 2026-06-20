@@ -559,4 +559,7 @@ The bar chart compares expected streams, actual streams, and estimated lift so t
 
 **Important note**  
 This is a prototype using mock or manually entered demo data. It is designed to show the logic and workflow of a music analytics tool, not to represent real Opus, DSP, or confidential label data.
+
+Conceptualized and designed by Alexander DiFiore, Rhino
+
 """)
