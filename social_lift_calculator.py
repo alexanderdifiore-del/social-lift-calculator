@@ -252,7 +252,92 @@ Example Live Performance,USDEMO000002,YouTube Live Performance,720p,3200000,8500
 Example Visualizer,USDEMO000003,YouTube Visualizer,1080p,950000,18000,3.1,5,5,9,9,2,4""",
                 language="csv"
             )
-st.sidebar.markdown("---")
+if upscale_priority_enabled:
+    with st.sidebar.expander("Upscale Priority Scoring Weights", expanded=False):
+        st.caption(
+            "Adjust how much each factor contributes to the final YouTube upscale priority score."
+        )
+
+        quality_gap_weight = st.slider(
+            "Current Resolution / Quality Gap Weight",
+            min_value=0,
+            max_value=30,
+            value=18,
+            step=1,
+            help="Higher weight prioritizes lower-resolution videos that have more room for improvement."
+        )
+
+        lifetime_demand_weight = st.slider(
+            "Lifetime YouTube Views Weight",
+            min_value=0,
+            max_value=30,
+            value=15,
+            step=1,
+            help="Higher weight prioritizes videos with strong long-term demand."
+        )
+
+        recent_momentum_weight = st.slider(
+            "Recent 28-Day Views Weight",
+            min_value=0,
+            max_value=30,
+            value=15,
+            step=1,
+            help="Higher weight prioritizes videos currently gaining traction."
+        )
+
+        engagement_weight = st.slider(
+            "Engagement Rate Weight",
+            min_value=0,
+            max_value=20,
+            value=8,
+            step=1,
+            help="Higher weight prioritizes videos with stronger viewer engagement."
+        )
+
+        catalog_priority_weight = st.slider(
+            "Catalog Priority Weight",
+            min_value=0,
+            max_value=30,
+            value=14,
+            step=1,
+            help="Higher weight prioritizes assets that matter more to catalog strategy."
+        )
+
+        commercial_upside_weight = st.slider(
+            "Commercial Upside Weight",
+            min_value=0,
+            max_value=30,
+            value=12,
+            step=1,
+            help="Higher weight prioritizes videos with stronger potential to support revenue, campaigns, or artist moments."
+        )
+
+        readiness_weight = st.slider(
+            "Asset Readiness / Rights Confidence Weight",
+            min_value=0,
+            max_value=25,
+            value=10,
+            step=1,
+            help="Higher weight prioritizes videos with available assets and stronger rights confidence."
+        )
+
+        ease_weight = st.slider(
+            "Upscale Ease Weight",
+            min_value=0,
+            max_value=20,
+            value=5,
+            step=1,
+            help="Higher weight prioritizes videos that are easier to upscale."
+        )
+
+        urgency_weight = st.slider(
+            "Urgency / Deadline Weight",
+            min_value=0,
+            max_value=20,
+            value=3,
+            step=1,
+            help="Higher weight prioritizes videos tied to deadlines, campaigns, anniversaries, or release moments."
+        )st.sidebar.markdown("---")
 st.sidebar.subheader("Commerce / Product Revenue")
 
 commerce_enabled = st.sidebar.checkbox(
@@ -1687,7 +1772,32 @@ if upscale_priority_enabled:
     score_df["Urgency Score"] = score_df["Urgency / Deadline (1-10)"] * 10
 
     score_df["Upscale Priority Score"] = (
-        score_df["Quality Gap Score"] * 0.18
+    total_upscale_weight = (
+        quality_gap_weight
+        + lifetime_demand_weight
+        + recent_momentum_weight
+        + engagement_weight
+        + catalog_priority_weight
+        + commercial_upside_weight
+        + readiness_weight
+        + ease_weight
+        + urgency_weight
+    )
+
+    if total_upscale_weight == 0:
+        total_upscale_weight = 1
+
+    score_df["Upscale Priority Score"] = (
+        score_df["Quality Gap Score"] * quality_gap_weight
+        + score_df["Lifetime Demand Score"] * lifetime_demand_weight
+        + score_df["Recent Momentum Score"] * recent_momentum_weight
+        + score_df["Engagement Score"] * engagement_weight
+        + score_df["Catalog Priority Score"] * catalog_priority_weight
+        + score_df["Commercial Upside Score"] * commercial_upside_weight
+        + score_df["Readiness Score"] * readiness_weight
+        + score_df["Ease Score"] * ease_weight
+        + score_df["Urgency Score"] * urgency_weight
+    ) / total_upscale_weight
         + score_df["Lifetime Demand Score"] * 0.15
         + score_df["Recent Momentum Score"] * 0.15
         + score_df["Engagement Score"] * 0.08
