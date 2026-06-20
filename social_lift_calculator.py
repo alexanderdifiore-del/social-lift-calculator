@@ -1135,7 +1135,7 @@ st.markdown(
         font-weight: 600;
         letter-spacing: 0.12em;
         text-transform: uppercase;
-        color: rgba(143, 252, 255, 0.82);
+        color: #008a99;
         text-shadow:
             0 0 6px rgba(143, 252, 255, 0.35),
             0 0 14px rgba(143, 252, 255, 0.18);
@@ -1143,7 +1143,7 @@ st.markdown(
         margin-top: 0.75rem;
         margin-bottom: 1.5rem;
     ">
-        Social Media Streaming Lift Calculator
+        Campaign Intelligence Dashboard
     </div>
     """,
     unsafe_allow_html=True
