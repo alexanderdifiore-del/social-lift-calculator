@@ -34,13 +34,10 @@ def _fmt(value: float | None, unit: str) -> str:
     return formatter(value)
 
 
-def credit_filters_sidebar(service: CreditService) -> dict:
-    st.sidebar.subheader("Filters")
-    include_demo = st.sidebar.checkbox(
-        "Include demo records",
-        value=False,
-        help="Demo data loads only when you enable Demo Mode on this page.",
-    )
+def credit_filters_sidebar(service: CreditService, *, target=None, include_demo: bool = False, columns=None) -> dict:
+    """Credit filters. ``include_demo`` is controlled by the dashboard's Demo mode."""
+    target = target if target is not None else st.sidebar
+    slots = list(columns) if columns else [target] * 5
     credits = service.list_credits(include_demo=include_demo)
     platforms = ["All"] + sorted({c["platform"] for c in credits} or AD_PLATFORMS)
     accounts = ["All"] + sorted({c["ad_account_id"] for c in credits})
@@ -50,11 +47,11 @@ def credit_filters_sidebar(service: CreditService) -> dict:
 
     return {
         "include_demo": include_demo,
-        "platform": st.sidebar.selectbox("Platform", platforms),
-        "ad_account_id": st.sidebar.selectbox("Ad account", accounts),
-        "artist": st.sidebar.selectbox("Artist", artists),
-        "campaign": st.sidebar.selectbox("Campaign", campaigns),
-        "market": st.sidebar.selectbox("Market", markets),
+        "platform": slots[0].selectbox("Platform", platforms, key="credit_f_platform"),
+        "ad_account_id": slots[1].selectbox("Ad account", accounts, key="credit_f_account"),
+        "artist": slots[2].selectbox("Artist", artists, key="credit_f_artist"),
+        "campaign": slots[3].selectbox("Campaign", campaigns, key="credit_f_campaign"),
+        "market": slots[4].selectbox("Market", markets, key="credit_f_market"),
     }
 
 
@@ -123,125 +120,11 @@ def render_programs_tab(service: CreditService) -> None:
 
     if not capacity.empty:
         st.subheader("Budget vs allocated vs delivered")
-        st.dataframe(capacity, use_container_width=True, hide_index=True)
+        st.dataframe(capacity, width="stretch", hide_index=True)
         st.caption(
             "Units are kept separate per program (USD, impressions, share %). "
             "Delivered reflects reported utilization — partner-served value is often a fraction of committed."
         )
-
-
-# ----------------------------------------------------------------------
-# Project requests (submission pipeline)
-# ----------------------------------------------------------------------
-
-REQUEST_STATUSES = [
-    "draft",
-    "submitted",
-    "under_review",
-    "approved",
-    "allocated",
-    "completed",
-    "declined",
-]
-
-
-def render_project_requests_tab(service: CreditService) -> None:
-    st.subheader("Project requests")
-    st.caption(
-        "Use this tab only if you want a **lightweight log** of requests alongside the allocations. "
-        "Your existing internal submission process stays exactly the same — this does not replace it. "
-        "Spotify and YouTube are managed monthly; mid-month requests typically roll to the next month."
-    )
-    programs = service.list_programs()
-    program_options = {f"{p['platform']} — {p['program_name']}": p["id"] for p in programs}
-
-    with st.expander("New project request", expanded=True):
-        with st.form("project_request_form"):
-            c1, c2, c3 = st.columns(3)
-            artist = c1.text_input("Artist *")
-            project_title = c2.text_input("Project title")
-            track = c3.text_input("Track")
-            program_label = st.selectbox("Program *", list(program_options.keys()))
-            c4, c5, c6 = st.columns(3)
-            period_label = c4.text_input("Period (e.g. 2026 Q4 or 2026-11)")
-            requested_value = c5.number_input("Requested value", min_value=0.0, step=1000.0)
-            status = c6.selectbox("Status", REQUEST_STATUSES, index=0)
-            c7, c8 = st.columns(2)
-            run_start = c7.date_input("Desired run start", value=None)
-            run_end = c8.date_input("Desired run end", value=None)
-            reason = st.text_area("Type of support requested & reason for consideration")
-            streaming_uplift = st.text_input("Metrics (streaming uplift, platform creates, etc.)")
-            top_markets = st.text_input("Top 5 markets for artist/track")
-            territory = st.text_area("Territory rights constraints (explicit geographic limitations)")
-            notes = st.text_area("Internal notes")
-            submitted = st.form_submit_button("Save request", type="primary")
-
-    if submitted:
-        if not artist:
-            st.error("Artist is required.")
-            return
-        program_id = program_options[program_label]
-        program = service.get_program(program_id)
-        service.create_project_request(
-            {
-                "artist": artist,
-                "project_title": project_title or None,
-                "track": track or None,
-                "program_id": program_id,
-                "period_label": period_label or None,
-                "requested_value": requested_value or None,
-                "value_unit": program["value_unit"] if program else None,
-                "request_status": status,
-                "run_start": str(run_start) if run_start else None,
-                "run_end": str(run_end) if run_end else None,
-                "reason_for_consideration": reason or None,
-                "streaming_uplift": streaming_uplift or None,
-                "top_markets": top_markets or None,
-                "territory_constraints": territory or None,
-                "submitted_at": date.today().isoformat() if status in {"submitted", "under_review", "approved"} else None,
-                "approved_at": date.today().isoformat() if status == "approved" else None,
-                "notes": notes or None,
-            }
-        )
-        st.success("Project request saved.")
-        st.rerun()
-
-    requests = service.list_project_requests()
-    if requests:
-        st.markdown("**Request pipeline**")
-        st.dataframe(
-            [
-                {
-                    "Artist": r["artist"],
-                    "Project": r.get("project_title") or "",
-                    "Track": r.get("track") or "",
-                    "Program": r["program_name"],
-                    "Period": r.get("period_label") or "",
-                    "Status": r["request_status"],
-                    "Requested": _fmt(r.get("requested_value"), r.get("value_unit") or "other"),
-                    "Run window": f"{r.get('run_start') or ''} → {r.get('run_end') or ''}",
-                }
-                for r in requests
-            ],
-            use_container_width=True,
-            hide_index=True,
-        )
-
-        st.markdown("**Update status**")
-        options = {f"#{r['id']} — {r['artist']} ({r['program_name']})": r["id"] for r in requests}
-        selected = st.selectbox("Request", list(options.keys()))
-        new_status = st.selectbox("New status", REQUEST_STATUSES, key="req_status_update")
-        if st.button("Update status"):
-            service.update_project_status(
-                options[selected],
-                new_status,
-                submitted_at=date.today().isoformat() if new_status in {"submitted", "under_review"} else None,
-                approved_at=date.today().isoformat() if new_status == "approved" else None,
-            )
-            st.success("Status updated.")
-            st.rerun()
-    else:
-        st.info("No project requests yet. Create one above.")
 
 
 # ----------------------------------------------------------------------
@@ -258,17 +141,10 @@ def render_allocations_tab(service: CreditService, filters: dict) -> None:
     programs = service.list_programs()
     program_options = {f"{p['platform']} — {p['program_name']}": p["id"] for p in programs}
 
-    approved_requests = service.list_project_requests(status="approved") + service.list_project_requests(status="allocated")
-    request_options = {
-        f"#{r['id']} — {r['artist']} — {r.get('track') or ''} ({r['program_name']})": r for r in approved_requests
-    }
-
     with st.expander("New allocation", expanded=True):
         with st.form("allocation_form"):
             program_label = st.selectbox("Program *", list(program_options.keys()))
-            c1, c2 = st.columns(2)
-            period_label = c1.text_input("Period label *", value="2026 Q4")
-            request_label = c2.selectbox("Link to approved request (optional)", ["— none —"] + list(request_options.keys()))
+            period_label = st.text_input("Period label *", value="2026 Q4")
             program_id = program_options[program_label]
             program = service.get_program(program_id)
             allocated_value = st.number_input(
@@ -277,26 +153,22 @@ def render_allocations_tab(service: CreditService, filters: dict) -> None:
                 step=1000.0,
             )
             c3, c4 = st.columns(2)
-            artist = c3.text_input("Artist (if not linked to request)")
-            track = c4.text_input("Track (if not linked to request)")
+            artist = c3.text_input("Artist")
+            track = c4.text_input("Track / campaign")
             allocated_at = st.date_input("Allocation date", value=date.today())
             notes = st.text_area("Notes")
             submitted = st.form_submit_button("Save allocation", type="primary")
 
     if submitted:
-        selected_request = request_options.get(request_label)
         service.create_allocation(
             program_id,
             period_label,
             allocated_value,
-            project_id=selected_request["id"] if selected_request else None,
-            artist=(selected_request.get("artist") if selected_request else artist) or None,
-            track=(selected_request.get("track") if selected_request else track) or None,
+            artist=artist or None,
+            track=track or None,
             allocated_at=str(allocated_at),
             notes=notes or None,
         )
-        if selected_request:
-            service.update_project_status(selected_request["id"], "allocated")
         st.success("Allocation saved.")
         st.rerun()
 
@@ -316,7 +188,7 @@ def render_allocations_tab(service: CreditService, filters: dict) -> None:
                 }
                 for a in allocations
             ],
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
 
@@ -359,9 +231,9 @@ def render_allocations_tab(service: CreditService, filters: dict) -> None:
         capacity = service.program_capacity_summary(include_demo=filters["include_demo"])
         if not capacity.empty:
             st.subheader("Program capacity summary")
-            st.dataframe(capacity, use_container_width=True, hide_index=True)
+            st.dataframe(capacity, width="stretch", hide_index=True)
     else:
-        st.info("No allocations yet. Approve a project request and allocate partner-funded value.")
+        st.info("No allocations yet. Add one above once your internal process approves a project.")
 
 
 # ----------------------------------------------------------------------
@@ -383,7 +255,7 @@ def render_inventory_tab(service: CreditService, filters: dict) -> None:
     st.caption(
         "Use this only for **actual billing coupons** that reduce invoiced ad spend. "
         "For Global Catalog partner allocations (TikTok, YouTube gratis, Spotify, Snap match, Meta fund), "
-        "use **Programs**, **Project requests**, and **Allocations** instead."
+        "use **Programs** and **Allocations & utilization** instead."
     )
     if summary.empty:
         st.info("No billing-level promotional credits recorded. This is expected for partner-funded allocations.")
@@ -396,7 +268,7 @@ def render_inventory_tab(service: CreditService, filters: dict) -> None:
             c2.metric("Available", f"{row['Total Available']:,.2f}")
             c3.metric("Used", f"{row['Total Used']:,.2f}")
             c4.metric("Expired / forfeited", f"{row['Expired / Forfeited']:,.2f}")
-        st.dataframe(inventory.drop(columns=["_credit_id", "Demo"], errors="ignore"), use_container_width=True)
+        st.dataframe(inventory.drop(columns=["_credit_id", "Demo"], errors="ignore"), width="stretch")
 
         warnings = expiration_warnings(rows, settings)
         if warnings:
@@ -418,7 +290,7 @@ def render_import_tab(service: CreditService) -> None:
     except Exception as exc:
         st.error(f"Could not read file: {exc}")
         return
-    st.dataframe(frame.head(15), use_container_width=True)
+    st.dataframe(frame.head(15), width="stretch")
     suggested = service.suggest_column_map(list(frame.columns))
     st.markdown("**Column mapping**")
     mapping: dict[str, str | None] = {}

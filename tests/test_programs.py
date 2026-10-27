@@ -75,3 +75,32 @@ def test_project_request_pipeline(service: CreditService):
     service.update_project_status(project_id, "approved")
     requests = service.list_project_requests(status="approved")
     assert any(r["id"] == project_id for r in requests)
+
+
+def test_funding_overview_keeps_funding_types_separate(service: CreditService):
+    programs = {p["program_key"]: p for p in service.list_programs()}
+    tiktok = programs["tiktok_platform_ad_credits"]
+    meta = programs["meta_promotional_fund"]
+    service.upsert_program_period(tiktok["id"], "2026 Q4", 186_000)
+    allocation_id = service.create_allocation(tiktok["id"], "2026 Q4", 20_000, artist="Artist A", track="Track 1")
+    service.create_allocation(meta["id"], "2026 Q4", 10_000, artist="Artist A")
+    service.record_utilization(allocation_id, "2026-10-15", 6_000)
+
+    overview = service.funding_overview()
+    tiktok_row = overview[overview["Platform"] == "TikTok Ads"].iloc[0]
+    assert tiktok_row["Funding type"] == "In-kind partner funding"
+    assert tiktok_row["Credit amount"] == 186_000
+    assert tiktok_row["Allocated"] == 20_000
+    assert tiktok_row["Utilized"] == 6_000
+    assert tiktok_row["Remaining"] == 14_000
+    meta_row = overview[overview["Platform"] == "Meta Ads"].iloc[0]
+    assert meta_row["Funding type"] == "Prepaid funds"
+    assert meta_row["Utilized"] == 0
+
+
+def test_funding_overview_hides_demo_records_by_default(service: CreditService):
+    service.load_demo_records()
+    assert service.funding_overview().empty
+    demo = service.funding_overview(include_demo=True)
+    assert not demo.empty
+    assert set(demo["Funding type"]) <= {"Billing credit", "Prepaid funds", "In-kind partner funding"}

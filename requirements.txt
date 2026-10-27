@@ -1,6 +1,7 @@
-streamlit
+streamlit>=1.50
 pandas
 numpy
 plotly
 pytest
 openpyxl
+jinja2>=3.1.3
