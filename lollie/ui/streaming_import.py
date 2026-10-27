@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import datetime
 
-import pandas as pd
 import streamlit as st
 
 from lollie.imports.file_loader import guess_column, load_tabular_upload

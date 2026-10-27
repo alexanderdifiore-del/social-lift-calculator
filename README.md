@@ -1,48 +1,48 @@
-# Social Media Streaming Lift Calculator (lollie)
+# lollie
 
-A prototype music analytics dashboard built with Streamlit and Plotly.
+A music analytics dashboard built with Streamlit and Plotly. Lollie follows one flow on one page:
 
-**lollie v2** adds a multipage paid media intelligence workspace (`app.py`) plus a shared `lollie/` Python package. The original full dashboard remains in `social_lift_calculator.py`.
+**Paid advertising + organic social  ->  streaming performance  ->  commerce revenue**
 
-The **Ad Credits & Funding** module tracks **partner-funded ad credit allocations** (Global Catalog style: TikTok quarterly budgets, YouTube gratis impressions, Spotify monthly slots, Snap match, Meta promotional fund) via SQLite-backed programs, project requests, allocations, and reported utilization. A legacy tab covers **billing-level promotional credits** that reduce invoiced ad spend, with CSV/Excel imports and audit history.
+## What is on the page
 
-This tool simulates the impact of social media activity on streaming performance by comparing expected baseline streams against actual streams after a social media event.
+| Section | What it shows |
+| --- | --- |
+| **A. Campaign Overview** | Artist, song, campaign ID, ISRC, release phase, platform, market, DSP focus, and headline paid / streaming / commerce numbers. Data-quality checks appear here. |
+| **B. Paid Media Performance** | Impressions, views, engagements, clicks, spend, budget, pacing, CPM, CPC, CTR, results by type, and a campaign-by-market table with goal status (Ahead of goal, On track, At risk, Forecast unavailable). |
+| **C. Streaming Impact Analysis** | The original lollie view: baseline rate, actual vs expected streams, estimated social lift, impact window summary, and the interactive expected-vs-actual chart. Paid flights, daily spend, extra organic posts and commerce can be overlaid. |
+| **D. Audience & Creative Performance** | Most cost-effective and most engaging audience and creative, using only compatible metrics. |
+| **E. Commerce Revenue** | Revenue, net revenue, units, revenue per 1K social views, category charts and tables, dated sales detail. |
+| **F. Ad Credits & Funding** | A compact, collapsed summary of in-kind partner funding, billing credits and prepaid funds, with advanced tools behind a switch. |
 
-## Features
+An optional **Campaign recap** at the bottom writes a short, factual summary from the numbers on the page.
 
-* Artist and song inputs
-* Simulated hourly streaming data
-* Natural daily streaming patterns
-* TikTok, Instagram Reels, and YouTube Shorts modeling
-* Social lift estimation
-* Interactive Plotly visualizations
-* Campaign impact window analysis
+## Real data first
 
-## Example Use Case
+Production mode is the default and only uses data you upload or type in.
 
-An artist posts a TikTok at 6 PM.
+* **Streaming:** CSV or Excel, hourly or daily, with column mapping. Daily data is never turned into hourly data.
+* **Paid media:** CSV or Excel exports from Meta, TikTok, Google Ads / YouTube, Snapchat and WAVO, with column mapping, validation and duplicate protection.
+* **Commerce:** CSV or Excel sales files, or dated sales typed into the sidebar.
 
-The dashboard estimates:
+Simulated data lives only behind **Advanced / Demo** at the bottom of the sidebar. Turning Demo mode on shows a banner and uses separate synthetic data; turning it off removes all of it.
 
-* Expected streams without the post
-* Actual streams after the post
-* Incremental streams attributable to social activity
-* Overall campaign lift percentage
+Lift is an observational, modeled estimate (actual streams minus an expected baseline). It never claims that a post or an ad caused the change.
 
-## Running the apps
+## Safety
 
-Multipage paid media v2 dashboard:
+* Nothing is uploaded to outside services and the app is not deployed anywhere by this repository.
+* Ad credits are never redeemed automatically, billing pages are not scraped, and no billing API is assumed.
+* Amounts in different currencies or units are never added together.
+
+## Running the app
 
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
 ```
 
-Classic single-page social lift calculator (commerce, upscale scoring, CSV uploads):
-
-```bash
-streamlit run social_lift_calculator.py
-```
+`streamlit run social_lift_calculator.py` opens the same dashboard.
 
 ## Tests
 
@@ -50,23 +50,15 @@ streamlit run social_lift_calculator.py
 pytest
 ```
 
-## Technology
+Tests cover streaming baselines and lift, commerce calculations, paid media metrics, budget pacing, goal forecasting, cross-platform imports, credits, and the dashboard itself.
 
-* Python
-* Streamlit
-* Pandas
-* NumPy
-* Plotly
-* pytest
+## Project layout
 
-## Future Enhancements
+* `social_lift_calculator.py` - the dashboard page.
+* `app.py` - launcher for the same page.
+* `lollie/streaming.py`, `lollie/commerce.py` - original streaming and commerce math.
+* `lollie/paid/` - paid media import, metrics, audience and creative ranking, recap.
+* `lollie/ui/` - Streamlit pieces (charts, imports, credits section).
+* `lollie/credits/`, `lollie/db/` - ad credits and funding (local SQLite file in `data/`).
 
-* Spotify CSV uploads
-* Apple Music analytics integration
-* Multi-platform attribution modeling
-* Campaign ROI analysis
-* Executive PDF reporting
-
-## Disclaimer
-
-This project uses simulated data and is intended as a prototype analytics concept.
+Conceptualized and designed by Alexander DiFiore, Rhino. Named "lollie" after his two beloved cats, Lily and Ollie.

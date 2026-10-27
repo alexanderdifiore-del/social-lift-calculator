@@ -20,7 +20,7 @@ from lollie.constants import (
     POST_TYPE_MULTIPLIER,
 )
 from lollie.paid.demo import synthetic_paid_media
-from lollie.paid.metrics import Thresholds, aggregate_kpis, as_of_default, campaign_market_table, overall_pacing
+from lollie.paid.metrics import Thresholds, as_of_default, campaign_market_table
 from lollie.paid.report import build_recap
 from lollie.paid.timeseries import daily_series, flights, overlap_report
 from lollie.streaming import (
@@ -647,11 +647,12 @@ with box_e:
         else:
             lift_text = " Revenue per lift stream is not available without a positive streaming lift."
         source_text = "Commerce estimate (demo)" if inputs.is_estimate else "Commerce data loaded"
-        st.caption(
+        commerce_note = (
             f"{source_text}: ${commerce_model.gross_revenue:,.0f} in attributed gross product revenue and "
             f"${commerce_model.net_revenue:,.0f} in estimated net revenue.{lift_text} "
             "Revenue is shown next to the streaming window for context and is not proof the post or ads caused the sales."
         )
+        st.caption(commerce_note.replace("$", "\\$"))
 
 # -----------------------------
 # SECTION F: AD CREDITS & FUNDING

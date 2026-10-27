@@ -5,7 +5,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from lollie.credits.metrics import build_inventory_dataframe, expiration_warnings
+from lollie.credits.metrics import expiration_warnings
 from lollie.credits.service import CreditService
 from lollie.credits.settings import load_warning_settings
 from lollie.credits.ui_components import (
@@ -80,32 +80,37 @@ def render_credits_compact(demo_mode: bool, *, artist: str = "", campaign: str =
             render_warning_banner(warnings[:3])
 
         advanced = st.toggle("Advanced credit tools (edit, record utilization, import, reconcile)", key="credits_advanced")
-        if advanced:
-            if demo_mode:
-                left, right = st.columns(2)
-                if left.button("Load synthetic demo credit records"):
-                    service.load_demo_records()
-                    st.rerun()
-                if right.button("Clear demo credit records"):
-                    service.clear_demo_records()
-                    st.rerun()
-            filters = credit_filters_sidebar(service, target=st, include_demo=demo_mode)
-            tabs = st.tabs(
-                [
-                    "Programs",
-                    "Allocations & utilization",
-                    "Billing credits",
-                    "Import billing credits",
-                    "Settings",
-                ]
-            )
-            with tabs[0]:
-                render_programs_tab(service)
-            with tabs[1]:
-                render_allocations_tab(service, filters)
-            with tabs[2]:
-                render_inventory_tab(service, filters)
-            with tabs[3]:
-                render_import_tab(service)
-            with tabs[4]:
-                render_settings_tab()
+
+    if not advanced:
+        return
+
+    with st.container(border=True):
+        st.markdown("**Advanced credit tools**")
+        if demo_mode:
+            left, right, _ = st.columns([1, 1, 2])
+            if left.button("Load synthetic demo credit records"):
+                service.load_demo_records()
+                st.rerun()
+            if right.button("Clear demo credit records"):
+                service.clear_demo_records()
+                st.rerun()
+        filters = credit_filters_sidebar(service, include_demo=demo_mode, columns=st.columns(5))
+        tabs = st.tabs(
+            [
+                "Programs",
+                "Allocations & utilization",
+                "Billing credits",
+                "Import billing credits",
+                "Settings",
+            ]
+        )
+        with tabs[0]:
+            render_programs_tab(service)
+        with tabs[1]:
+            render_allocations_tab(service, filters)
+        with tabs[2]:
+            render_inventory_tab(service, filters)
+        with tabs[3]:
+            render_import_tab(service)
+        with tabs[4]:
+            render_settings_tab()

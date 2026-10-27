@@ -34,9 +34,10 @@ def _fmt(value: float | None, unit: str) -> str:
     return formatter(value)
 
 
-def credit_filters_sidebar(service: CreditService, *, target=None, include_demo: bool = False) -> dict:
+def credit_filters_sidebar(service: CreditService, *, target=None, include_demo: bool = False, columns=None) -> dict:
     """Credit filters. ``include_demo`` is controlled by the dashboard's Demo mode."""
     target = target if target is not None else st.sidebar
+    slots = list(columns) if columns else [target] * 5
     credits = service.list_credits(include_demo=include_demo)
     platforms = ["All"] + sorted({c["platform"] for c in credits} or AD_PLATFORMS)
     accounts = ["All"] + sorted({c["ad_account_id"] for c in credits})
@@ -46,11 +47,11 @@ def credit_filters_sidebar(service: CreditService, *, target=None, include_demo:
 
     return {
         "include_demo": include_demo,
-        "platform": target.selectbox("Platform", platforms, key="credit_f_platform"),
-        "ad_account_id": target.selectbox("Ad account", accounts, key="credit_f_account"),
-        "artist": target.selectbox("Artist", artists, key="credit_f_artist"),
-        "campaign": target.selectbox("Campaign", campaigns, key="credit_f_campaign"),
-        "market": target.selectbox("Market", markets, key="credit_f_market"),
+        "platform": slots[0].selectbox("Platform", platforms, key="credit_f_platform"),
+        "ad_account_id": slots[1].selectbox("Ad account", accounts, key="credit_f_account"),
+        "artist": slots[2].selectbox("Artist", artists, key="credit_f_artist"),
+        "campaign": slots[3].selectbox("Campaign", campaigns, key="credit_f_campaign"),
+        "market": slots[4].selectbox("Market", markets, key="credit_f_market"),
     }
 
 

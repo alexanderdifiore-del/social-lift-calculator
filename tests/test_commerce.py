@@ -55,3 +55,38 @@ def test_bad_dates_and_empty_input_are_safe():
     bad = _row("CD", 10)
     bad["Sale Date"] = "not a date"
     assert build_commerce_model([bad], 0, 0).is_empty
+
+
+def test_overlay_uses_reported_sales_and_never_projects_real_data():
+    import pandas as pd
+
+    from lollie.commerce import build_commerce_model, build_commerce_overlay
+
+    rows = [
+        {
+            "Sale Date": pd.Timestamp("2026-10-28").date(),
+            "Product Category": "Vinyl LP",
+            "Attributed Units": 10,
+            "Average Selling Price": 30.0,
+            "Unit Cost / COGS": 10.0,
+            "Fee Rate (%)": 10.0,
+            "Source": "File upload",
+        }
+    ]
+    model = build_commerce_model(rows, 0, 0)
+    overlay = build_commerce_overlay(
+        model, "Gross Product Revenue", pd.Timestamp("2026-10-27 18:00"), 7, pd.Timestamp("2026-10-20"), allow_projection=False
+    )
+    assert not overlay.projected
+    assert overlay.frame["cumulative_commerce_value"].iloc[-1] == 300.0
+
+    outside = build_commerce_overlay(
+        model, "Gross Product Revenue", pd.Timestamp("2026-12-01"), 7, pd.Timestamp("2026-11-20"), allow_projection=False
+    )
+    assert outside.is_empty
+
+    projected = build_commerce_overlay(
+        model, "Gross Product Revenue", pd.Timestamp("2026-12-01"), 7, pd.Timestamp("2026-11-20"), allow_projection=True
+    )
+    assert projected.projected
+    assert round(projected.frame["cumulative_commerce_value"].iloc[-1], 6) == 300.0

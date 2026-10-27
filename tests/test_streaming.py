@@ -111,3 +111,73 @@ def test_zero_expected_gives_no_percent():
     )
     summary = summarize_impact(frame, pd.Series([True, True]))
     assert summary.lift_percent is None
+
+
+def _hourly_upload(days=10):
+    import numpy as np
+
+    ts = pd.date_range("2026-10-01", periods=days * 24, freq="h")
+    values = 1000 + 200 * np.sin(ts.hour / 24 * 2 * np.pi)
+    return pd.DataFrame({"When": ts.astype(str), "Plays": values.round()})
+
+
+def test_prepare_hourly_upload_estimates_baseline_from_history():
+    from lollie.streaming import prepare_streaming_frame
+
+    raw = _hourly_upload()
+    raw.loc[(pd.to_datetime(raw["When"]) >= "2026-10-08 18:00") & (pd.to_datetime(raw["When"]) < "2026-10-09 18:00"), "Plays"] *= 2
+    prep = prepare_streaming_frame(
+        raw, "When", "Plays", None, post_timestamp=datetime(2026, 10, 8, 18), impact_window_hours=24
+    )
+    assert prep.error is None and prep.granularity == "intraday" and prep.baseline_estimated
+    mask = impact_window_mask(prep.frame["timestamp"], datetime(2026, 10, 8, 18), 24, "intraday")
+    result = summarize_impact(prep.frame, mask)
+    assert result.lift > 0 and 90 < result.lift_percent < 110
+
+
+def test_prepare_daily_upload_stays_daily_and_is_never_made_hourly():
+    from lollie.streaming import prepare_streaming_frame
+
+    days = pd.date_range("2026-09-01", periods=40)
+    raw = pd.DataFrame({"Date": days.astype(str), "Streams": [50_000] * 40})
+    raw.loc[raw["Date"] == "2026-10-05", "Streams"] = 80_000
+    prep = prepare_streaming_frame(
+        raw, "Date", "Streams", None, post_timestamp=datetime(2026, 10, 5, 12), impact_window_hours=24
+    )
+    assert prep.granularity == "daily"
+    assert len(prep.frame) == 40
+    mask = impact_window_mask(prep.frame["timestamp"], datetime(2026, 10, 5, 12), 24, "daily")
+    assert mask.sum() == 1
+    assert summarize_impact(prep.frame, mask).lift == 30_000
+
+
+def test_prepare_upload_rejects_bad_mapping_and_filters_markets():
+    from lollie.streaming import prepare_streaming_frame
+
+    raw = pd.DataFrame(
+        {
+            "Date": ["2026-10-01", "2026-10-01", "2026-10-02", "2026-10-02"],
+            "Streams": [100, 50, 120, 60],
+            "Country": ["US", "UK", "US", "UK"],
+        }
+    )
+    bad = prepare_streaming_frame(raw, "Date", "Date", None, post_timestamp=datetime(2026, 10, 2), impact_window_hours=24)
+    assert bad.error
+    us = prepare_streaming_frame(
+        raw, "Date", "Streams", None, post_timestamp=datetime(2026, 10, 2), impact_window_hours=24,
+        market_column="Country", market="US",
+    )
+    assert us.frame["actual_streams"].tolist() == [100, 120]
+    both = prepare_streaming_frame(
+        raw, "Date", "Streams", None, post_timestamp=datetime(2026, 10, 2), impact_window_hours=24,
+        market_column="Country", market="All markets",
+    )
+    assert both.frame["actual_streams"].tolist() == [150, 180]
+    assert any("added together" in note for note in both.notes)
+
+
+def test_manual_summary_without_expected_has_no_percent():
+    from lollie.streaming import manual_summary
+
+    assert manual_summary(0, 100).lift_percent is None
+    assert manual_summary(100, 150).lift_percent == 50.0

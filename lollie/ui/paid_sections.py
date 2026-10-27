@@ -116,7 +116,7 @@ def ingest_uploaded_files(files: list, default_currency: str, container) -> Paid
                     "Report source",
                     PLATFORM_OPTIONS,
                     index=PLATFORM_OPTIONS.index(detected),
-                    key=f"{key}_platform",
+                    key=f"{key}_source",
                     help="Detected from the file name and column headings. Change it if it is wrong.",
                 )
                 suggested = suggest_mapping(columns)
@@ -130,7 +130,7 @@ def ingest_uploaded_files(files: list, default_currency: str, container) -> Paid
                         FIELD_LABELS.get(name, name),
                         options,
                         index=options.index(default) if default in options else 0,
-                        key=f"{key}_{name}",
+                        key=f"{key}_field_{name}",
                     )
                     mapping[name] = None if choice == "(not in file)" else choice
                 st.dataframe(raw.head(8), width="stretch")
@@ -317,6 +317,7 @@ def render_market_table(frame: pd.DataFrame, as_of: pd.Timestamp, thresholds: Th
         "Campaign",
         "Platform",
         "Market",
+        "Goal status",
         "Objective",
         "Budget",
         "Spend",
@@ -328,7 +329,6 @@ def render_market_table(frame: pd.DataFrame, as_of: pd.Timestamp, thresholds: Th
         "CPM",
         "Cost per result",
         "Result rate",
-        "Goal status",
     ]
     show_table(view[compact], MARKET_FORMATS, "Goal status")
     with st.expander("More campaign detail"):
@@ -348,7 +348,7 @@ def _highlight(label: str, row: pd.Series | None, name_column: str, metric: str,
         st.metric(label, "Not enough comparable data")
         return
     st.metric(label, str(row[name_column]))
-    st.caption(f"{row['Platform']} - {metric}: {fmt(row)}")
+    st.caption(f"{row['Platform']} - {metric}: {fmt(row)}".replace("$", "\\$"))
 
 
 def render_audience_creative(frame: pd.DataFrame, currency: str) -> dict:
@@ -375,9 +375,12 @@ def render_audience_creative(frame: pd.DataFrame, currency: str) -> dict:
     elif families:
         family = families[0]
 
-    platforms = sorted(
-        set(audience_rank.get("Platform", pd.Series(dtype=str))) | set(creative_rank.get("Platform", pd.Series(dtype=str)))
-    )
+    def engagement_platforms(rank: pd.DataFrame) -> set:
+        if rank.empty or "Engagement rate" not in rank:
+            return set()
+        return set(rank.loc[rank["Engagement rate"].notna(), "Platform"])
+
+    platforms = sorted(engagement_platforms(audience_rank) | engagement_platforms(creative_rank))
     platform = None
     if len(platforms) > 1:
         platform = st.selectbox(
