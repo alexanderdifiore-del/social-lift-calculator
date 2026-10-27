@@ -10,6 +10,7 @@ from typing import Any
 import pandas as pd
 
 from lollie.credits.constants import AD_PLATFORMS, IMPORT_FIELD_ALIASES
+from lollie.credits.programs import PROGRAM_BLUEPRINTS
 from lollie.credits.metrics import compute_credit_balances
 from lollie.db.connection import get_connection, init_database
 from lollie.imports.file_loader import guess_column
@@ -20,6 +21,39 @@ class CreditService:
 
     def __init__(self) -> None:
         init_database()
+        self._seed_program_blueprints()
+
+    def _seed_program_blueprints(self) -> None:
+        with get_connection() as conn:
+            for blueprint in PROGRAM_BLUEPRINTS:
+                conn.execute(
+                    """
+                    INSERT INTO partner_programs (
+                        program_key, platform, program_name, value_unit,
+                        budget_model, source_reference, notes_template,
+                        project_criteria_hint, is_active
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+                    ON CONFLICT(program_key) DO UPDATE SET
+                        platform = excluded.platform,
+                        program_name = excluded.program_name,
+                        value_unit = excluded.value_unit,
+                        budget_model = excluded.budget_model,
+                        source_reference = excluded.source_reference,
+                        notes_template = excluded.notes_template,
+                        project_criteria_hint = excluded.project_criteria_hint
+                    """,
+                    (
+                        blueprint["program_key"],
+                        blueprint["platform"],
+                        blueprint["program_name"],
+                        blueprint["value_unit"],
+                        blueprint["budget_model"],
+                        blueprint.get("source_reference"),
+                        blueprint.get("notes_template"),
+                        blueprint.get("project_criteria_hint"),
+                    ),
+                )
+            conn.commit()
 
     def _duplicate_key(
         self,
@@ -573,6 +607,346 @@ class CreditService:
                     f"Credit #{credit['id']} ({credit['promotion_name']}): manual record shows utilization — reconcile with billing."
                 )
         return flags
+
+    # ------------------------------------------------------------------
+    # Partner-funded programs (Global Catalog style)
+    # ------------------------------------------------------------------
+
+    def list_programs(self, *, active_only: bool = True) -> list[dict[str, Any]]:
+        with get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM partner_programs
+                WHERE (? = 0 OR is_active = 1)
+                ORDER BY platform, program_name
+                """,
+                (1 if active_only else 0,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_program(self, program_id: int) -> dict[str, Any] | None:
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM partner_programs WHERE id = ?", (program_id,)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def upsert_program_period(
+        self,
+        program_id: int,
+        period_label: str,
+        budgeted_value: float | None,
+        *,
+        period_start: str | None = None,
+        period_end: str | None = None,
+        notes: str | None = None,
+    ) -> None:
+        program = self.get_program(program_id)
+        if not program:
+            raise ValueError("Program not found.")
+        with get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO program_periods (
+                    program_id, period_label, period_start, period_end,
+                    budgeted_value, value_unit, notes
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(program_id, period_label) DO UPDATE SET
+                    period_start = excluded.period_start,
+                    period_end = excluded.period_end,
+                    budgeted_value = excluded.budgeted_value,
+                    notes = excluded.notes
+                """,
+                (
+                    program_id,
+                    period_label,
+                    period_start,
+                    period_end,
+                    budgeted_value,
+                    program["value_unit"],
+                    notes,
+                ),
+            )
+            conn.commit()
+
+    def list_program_periods(self, program_id: int | None = None) -> list[dict[str, Any]]:
+        with get_connection() as conn:
+            if program_id:
+                rows = conn.execute(
+                    """
+                    SELECT pp.*, pr.program_name, pr.platform
+                    FROM program_periods pp
+                    JOIN partner_programs pr ON pr.id = pp.program_id
+                    WHERE pp.program_id = ?
+                    ORDER BY pp.period_label DESC
+                    """,
+                    (program_id,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT pp.*, pr.program_name, pr.platform
+                    FROM program_periods pp
+                    JOIN partner_programs pr ON pr.id = pp.program_id
+                    ORDER BY pp.period_label DESC, pr.platform
+                    """
+                ).fetchall()
+        return [dict(r) for r in rows]
+
+    def create_project_request(self, payload: dict[str, Any]) -> int:
+        with get_connection() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO project_requests (
+                    artist, project_title, track, program_id, period_label,
+                    requested_value, value_unit, request_status, run_start, run_end,
+                    reason_for_consideration, streaming_uplift, top_markets,
+                    territory_constraints, submitted_at, approved_at, notes
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    payload["artist"],
+                    payload.get("project_title"),
+                    payload.get("track"),
+                    payload["program_id"],
+                    payload.get("period_label"),
+                    payload.get("requested_value"),
+                    payload.get("value_unit"),
+                    payload.get("request_status", "draft"),
+                    payload.get("run_start"),
+                    payload.get("run_end"),
+                    payload.get("reason_for_consideration"),
+                    payload.get("streaming_uplift"),
+                    payload.get("top_markets"),
+                    payload.get("territory_constraints"),
+                    payload.get("submitted_at"),
+                    payload.get("approved_at"),
+                    payload.get("notes"),
+                ),
+            )
+            conn.commit()
+            return int(cursor.lastrowid)
+
+    def update_project_status(
+        self,
+        project_id: int,
+        status: str,
+        *,
+        submitted_at: str | None = None,
+        approved_at: str | None = None,
+    ) -> None:
+        with get_connection() as conn:
+            conn.execute(
+                """
+                UPDATE project_requests
+                SET request_status = ?,
+                    submitted_at = COALESCE(?, submitted_at),
+                    approved_at = COALESCE(?, approved_at),
+                    updated_at = datetime('now')
+                WHERE id = ?
+                """,
+                (status, submitted_at, approved_at, project_id),
+            )
+            conn.commit()
+
+    def list_project_requests(
+        self,
+        *,
+        program_id: int | None = None,
+        status: str | None = None,
+    ) -> list[dict[str, Any]]:
+        clauses, params = ["1=1"], []
+        if program_id:
+            clauses.append("pj.program_id = ?")
+            params.append(program_id)
+        if status and status != "All":
+            clauses.append("pj.request_status = ?")
+            params.append(status)
+        with get_connection() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT pj.*, pr.program_name, pr.platform, pr.value_unit AS program_unit
+                FROM project_requests pj
+                JOIN partner_programs pr ON pr.id = pj.program_id
+                WHERE {' AND '.join(clauses)}
+                ORDER BY pj.created_at DESC
+                """,
+                params,
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def create_allocation(
+        self,
+        program_id: int,
+        period_label: str,
+        allocated_value: float,
+        *,
+        project_id: int | None = None,
+        artist: str | None = None,
+        track: str | None = None,
+        allocated_at: str | None = None,
+        notes: str | None = None,
+        is_demo: bool = False,
+    ) -> int:
+        program = self.get_program(program_id)
+        if not program:
+            raise ValueError("Program not found.")
+        with get_connection() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO program_allocations (
+                    program_id, period_label, project_id, artist, track,
+                    allocated_value, value_unit, allocated_at, notes, is_demo
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    program_id,
+                    period_label,
+                    project_id,
+                    artist,
+                    track,
+                    float(allocated_value),
+                    program["value_unit"],
+                    allocated_at,
+                    notes,
+                    1 if is_demo else 0,
+                ),
+            )
+            conn.commit()
+            return int(cursor.lastrowid)
+
+    def list_allocations_by_program(
+        self,
+        program_id: int | None = None,
+        period_label: str | None = None,
+        *,
+        include_demo: bool = False,
+    ) -> list[dict[str, Any]]:
+        clauses, params = ["1=1"], []
+        if not include_demo:
+            clauses.append("pa.is_demo = 0")
+        if program_id:
+            clauses.append("pa.program_id = ?")
+            params.append(program_id)
+        if period_label and period_label != "All":
+            clauses.append("pa.period_label = ?")
+            params.append(period_label)
+        with get_connection() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT pa.*, pr.program_name, pr.platform,
+                       pj.project_title, pj.artist AS project_artist, pj.track AS project_track
+                FROM program_allocations pa
+                JOIN partner_programs pr ON pr.id = pa.program_id
+                LEFT JOIN project_requests pj ON pj.id = pa.project_id
+                WHERE {' AND '.join(clauses)}
+                ORDER BY pa.created_at DESC
+                """,
+                params,
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def record_utilization(
+        self,
+        allocation_id: int,
+        record_date: str,
+        delivered_value: float,
+        *,
+        impressions_served: float | None = None,
+        gross_media_spend: float | None = None,
+        currency: str | None = None,
+        verification_source: str = "Manual entry",
+        reference: str | None = None,
+        notes: str | None = None,
+        is_demo: bool = False,
+    ) -> int:
+        with get_connection() as conn:
+            alloc = conn.execute(
+                "SELECT value_unit FROM program_allocations WHERE id = ?",
+                (allocation_id,),
+            ).fetchone()
+            if not alloc:
+                raise ValueError("Allocation not found.")
+            cursor = conn.execute(
+                """
+                INSERT INTO utilization_records (
+                    allocation_id, record_date, delivered_value, value_unit,
+                    impressions_served, gross_media_spend, currency,
+                    verification_source, reference, notes, is_demo
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    allocation_id,
+                    record_date,
+                    float(delivered_value),
+                    alloc["value_unit"],
+                    impressions_served,
+                    gross_media_spend,
+                    currency,
+                    verification_source,
+                    reference,
+                    notes,
+                    1 if is_demo else 0,
+                ),
+            )
+            conn.commit()
+            return int(cursor.lastrowid)
+
+    def program_capacity_summary(self, *, include_demo: bool = False) -> pd.DataFrame:
+        """Budgeted vs allocated vs delivered per program + period (units kept separate)."""
+        demo_alloc = "" if include_demo else "AND pa.is_demo = 0"
+        demo_util = "" if include_demo else "AND ur.is_demo = 0"
+        query = f"""
+            SELECT
+                pr.id AS program_id,
+                pr.program_name,
+                pr.platform,
+                pr.value_unit,
+                pr.budget_model,
+                pa.period_label,
+                pp.budgeted_value,
+                COALESCE(SUM(pa.allocated_value), 0) AS allocated_value,
+                (
+                    SELECT COALESCE(SUM(ur.delivered_value), 0)
+                    FROM utilization_records ur
+                    JOIN program_allocations pa2 ON pa2.id = ur.allocation_id
+                    WHERE pa2.program_id = pr.id
+                      AND pa2.period_label = pa.period_label
+                      {demo_util}
+                ) AS delivered_value
+            FROM program_allocations pa
+            JOIN partner_programs pr ON pr.id = pa.program_id
+            LEFT JOIN program_periods pp
+                ON pp.program_id = pa.program_id AND pp.period_label = pa.period_label
+            WHERE 1=1 {demo_alloc}
+            GROUP BY pr.id, pa.period_label
+            ORDER BY pr.platform, pa.period_label DESC
+        """
+        with get_connection() as conn:
+            rows = conn.execute(query).fetchall()
+        records = []
+        for row in rows:
+            budgeted = float(row["budgeted_value"] or 0)
+            allocated = float(row["allocated_value"] or 0)
+            delivered = float(row["delivered_value"] or 0)
+            records.append(
+                {
+                    "Program": row["program_name"],
+                    "Platform": row["platform"],
+                    "Period": row["period_label"],
+                    "Unit": row["value_unit"],
+                    "Budgeted": budgeted if budgeted else None,
+                    "Allocated": allocated,
+                    "Delivered (reported)": delivered,
+                    "Remaining (budget − allocated)": (
+                        budgeted - allocated if budgeted else None
+                    ),
+                    "Utilization % (delivered/allocated)": (
+                        round(delivered / allocated * 100, 1) if allocated > 0 else None
+                    ),
+                }
+            )
+        return pd.DataFrame(records)
 
     def register_exchange_rate(
         self,

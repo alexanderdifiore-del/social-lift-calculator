@@ -6,11 +6,11 @@ from lollie.branding import render_lollie_header
 from lollie.credits.service import CreditService
 from lollie.credits.ui_components import (
     credit_filters_sidebar,
-    render_allocation_tab,
-    render_cost_tab,
+    render_allocations_tab,
     render_import_tab,
     render_inventory_tab,
-    render_register_tab,
+    render_programs_tab,
+    render_project_requests_tab,
     render_settings_tab,
 )
 
@@ -23,11 +23,11 @@ render_lollie_header("ad credits & funding")
 
 st.markdown(
     """
-Track **promotional advertising credits** across Meta, TikTok, Google/YouTube, and Snapchat.
-Monitor balances, expiration, eligibility, and **verified** utilization alongside gross media spend.
+Track **partner-funded ad credit allocations** for Global Catalog — TikTok, Spotify, YouTube,
+Snapchat, and Meta — plus any **billing-level promotional credits** that reduce invoiced spend.
 
-WAVO and other consolidated reports can be imported when they include promotional credit fields — 
-Lollie does not assume undocumented platform API access.
+These are **in-kind partner allocations** (quarterly budgets, impression grants, match capacity,
+share-of-pool), managed through internal **project requests** — not self-serve billing coupons.
 """
 )
 
@@ -49,26 +49,26 @@ with st.sidebar:
 
 filters = credit_filters_sidebar(service)
 
-tab_inventory, tab_register, tab_import, tab_allocate, tab_cost, tab_settings = st.tabs(
+tab_programs, tab_requests, tab_allocations, tab_legacy, tab_import, tab_settings = st.tabs(
     [
-        "Inventory dashboard",
-        "Register credit",
-        "Import CSV / Excel",
-        "Allocate & reconcile",
-        "Cost analysis",
+        "Programs",
+        "Project requests",
+        "Allocations & utilization",
+        "Billing credits (legacy)",
+        "Import billing credits",
         "Advanced settings",
     ]
 )
 
-with tab_inventory:
+with tab_programs:
+    render_programs_tab(service)
+with tab_requests:
+    render_project_requests_tab(service)
+with tab_allocations:
+    render_allocations_tab(service, filters)
+with tab_legacy:
     render_inventory_tab(service, filters)
-with tab_register:
-    render_register_tab(service)
 with tab_import:
     render_import_tab(service)
-with tab_allocate:
-    render_allocation_tab(service, filters)
-with tab_cost:
-    render_cost_tab(service, filters)
 with tab_settings:
     render_settings_tab()

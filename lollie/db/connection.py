@@ -6,7 +6,7 @@ import os
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def get_db_path() -> Path:
@@ -135,6 +135,96 @@ def init_database() -> None:
             CREATE INDEX IF NOT EXISTS idx_credits_expiration ON promotional_credits(expiration_date);
             CREATE INDEX IF NOT EXISTS idx_ledger_credit ON credit_ledger(credit_id);
             CREATE INDEX IF NOT EXISTS idx_credits_duplicate ON promotional_credits(duplicate_key);
+
+            CREATE TABLE IF NOT EXISTS partner_programs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                program_key TEXT NOT NULL UNIQUE,
+                platform TEXT NOT NULL,
+                program_name TEXT NOT NULL,
+                value_unit TEXT NOT NULL,
+                budget_model TEXT NOT NULL,
+                source_reference TEXT,
+                notes_template TEXT,
+                project_criteria_hint TEXT,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS program_periods (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                program_id INTEGER NOT NULL,
+                period_label TEXT NOT NULL,
+                period_start TEXT,
+                period_end TEXT,
+                budgeted_value REAL,
+                value_unit TEXT NOT NULL,
+                notes TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY (program_id) REFERENCES partner_programs(id) ON DELETE CASCADE,
+                UNIQUE (program_id, period_label)
+            );
+
+            CREATE TABLE IF NOT EXISTS project_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                artist TEXT NOT NULL,
+                project_title TEXT,
+                track TEXT,
+                program_id INTEGER NOT NULL,
+                period_label TEXT,
+                requested_value REAL,
+                value_unit TEXT,
+                request_status TEXT NOT NULL DEFAULT 'draft',
+                run_start TEXT,
+                run_end TEXT,
+                reason_for_consideration TEXT,
+                streaming_uplift TEXT,
+                top_markets TEXT,
+                territory_constraints TEXT,
+                submitted_at TEXT,
+                approved_at TEXT,
+                notes TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY (program_id) REFERENCES partner_programs(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS program_allocations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                program_id INTEGER NOT NULL,
+                period_label TEXT,
+                project_id INTEGER,
+                artist TEXT,
+                track TEXT,
+                allocated_value REAL NOT NULL,
+                value_unit TEXT NOT NULL,
+                allocated_at TEXT,
+                notes TEXT,
+                is_demo INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY (program_id) REFERENCES partner_programs(id) ON DELETE CASCADE,
+                FOREIGN KEY (project_id) REFERENCES project_requests(id) ON DELETE SET NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS utilization_records (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                allocation_id INTEGER NOT NULL,
+                record_date TEXT NOT NULL,
+                delivered_value REAL NOT NULL,
+                value_unit TEXT NOT NULL,
+                impressions_served REAL,
+                gross_media_spend REAL,
+                currency TEXT,
+                verification_source TEXT NOT NULL DEFAULT 'Manual entry',
+                reference TEXT,
+                notes TEXT,
+                is_demo INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY (allocation_id) REFERENCES program_allocations(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_alloc_program ON program_allocations(program_id, period_label);
+            CREATE INDEX IF NOT EXISTS idx_util_allocation ON utilization_records(allocation_id);
+            CREATE INDEX IF NOT EXISTS idx_project_program ON project_requests(program_id, request_status);
             """
         )
         conn.execute(

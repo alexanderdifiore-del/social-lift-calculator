@@ -24,7 +24,7 @@ Use the sidebar to open a page:
 | --- | --- |
 | **Paid Media Intelligence** | Budget mix, CPM assumptions, and incremental stream forecasts |
 | **Scenario Lab** | Compare spend levels and intensity scores side by side |
-| **Ad Credits & Funding** | Promotional credit inventory, imports, reconciliation, and net cost analysis |
+| **Ad Credits & Funding** | Partner-funded credit programs (TikTok, Spotify, YouTube, Snap, Meta), project requests, allocations, and utilization |
 
 ### Classic social lift calculator
 
