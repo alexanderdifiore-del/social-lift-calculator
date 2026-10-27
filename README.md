@@ -1,6 +1,8 @@
-# Social Media Streaming Lift Calculator
+# Social Media Streaming Lift Calculator (lollie)
 
 A prototype music analytics dashboard built with Streamlit and Plotly.
+
+**lollie v2** adds a multipage paid media intelligence workspace (`app.py`) plus a shared `lollie/` Python package. The original full dashboard remains in `social_lift_calculator.py`.
 
 This tool simulates the impact of social media activity on streaming performance by comparing expected baseline streams against actual streams after a social media event.
 
@@ -25,6 +27,27 @@ The dashboard estimates:
 * Incremental streams attributable to social activity
 * Overall campaign lift percentage
 
+## Running the apps
+
+Multipage paid media v2 dashboard:
+
+```bash
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+Classic single-page social lift calculator (commerce, upscale scoring, CSV uploads):
+
+```bash
+streamlit run social_lift_calculator.py
+```
+
+## Tests
+
+```bash
+pytest
+```
+
 ## Technology
 
 * Python
@@ -32,6 +55,7 @@ The dashboard estimates:
 * Pandas
 * NumPy
 * Plotly
+* pytest
 
 ## Future Enhancements
 
