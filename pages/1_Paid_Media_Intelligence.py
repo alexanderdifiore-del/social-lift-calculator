@@ -140,3 +140,24 @@ st.caption(
     f"Prototype forecast generated {datetime.now():%Y-%m-%d %H:%M}. "
     "Figures are directional for planning, not guaranteed delivery."
 )
+
+with st.expander("Promotional credits & net media cost"):
+    st.markdown(
+        """
+        **Gross budget** above drives delivery planning (CPM/CPC-style estimates).
+        For **verified promotional credit utilization** and **net media cost**, open
+        **Ad Credits & Funding** in the sidebar.
+        """
+    )
+    try:
+        from lollie.credits.service import CreditService
+
+        if "credit_service" not in st.session_state:
+            st.session_state.credit_service = CreditService()
+        cost_df = st.session_state.credit_service.campaign_cost_summary()
+        if cost_df.empty:
+            st.info("No campaign spend linked yet. Register credits and gross spend on the Ad Credits page.")
+        else:
+            st.dataframe(cost_df, use_container_width=True, hide_index=True)
+    except Exception as exc:
+        st.warning(f"Credit summary unavailable: {exc}")

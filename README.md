@@ -4,6 +4,8 @@ A prototype music analytics dashboard built with Streamlit and Plotly.
 
 **lollie v2** adds a multipage paid media intelligence workspace (`app.py`) plus a shared `lollie/` Python package. The original full dashboard remains in `social_lift_calculator.py`.
 
+The **Ad Credits & Funding** module tracks promotional credits for Meta, TikTok, Google/YouTube, and Snapchat with SQLite-backed audit history, CSV/Excel imports, and gross vs net media cost reporting (verified credits only).
+
 This tool simulates the impact of social media activity on streaming performance by comparing expected baseline streams against actual streams after a social media event.
 
 ## Features
