@@ -148,9 +148,9 @@ REQUEST_STATUSES = [
 def render_project_requests_tab(service: CreditService) -> None:
     st.subheader("Project requests")
     st.caption(
-        "Track internal submissions for partner support (email Miguel Jimenez and Jasmine Dhillon "
-        "per the submission guidelines). Spotify and YouTube are managed monthly; mid-month requests "
-        "roll to the next month."
+        "Use this tab only if you want a **lightweight log** of requests alongside the allocations. "
+        "Your existing internal submission process stays exactly the same — this does not replace it. "
+        "Spotify and YouTube are managed monthly; mid-month requests typically roll to the next month."
     )
     programs = service.list_programs()
     program_options = {f"{p['platform']} — {p['program_name']}": p["id"] for p in programs}

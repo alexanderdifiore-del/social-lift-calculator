@@ -27,7 +27,8 @@ Track **partner-funded ad credit allocations** for Global Catalog — TikTok, Sp
 Snapchat, and Meta — plus any **billing-level promotional credits** that reduce invoiced spend.
 
 These are **in-kind partner allocations** (quarterly budgets, impression grants, match capacity,
-share-of-pool), managed through internal **project requests** — not self-serve billing coupons.
+share-of-pool). Use this dashboard to track commitments and reported delivery — your internal
+project request process stays the same.
 """
 )
 
