@@ -1,7 +1,6 @@
 """Paid media intelligence planner — Lollie v2."""
 
 from datetime import datetime
-
 import plotly.graph_objects as go
 import streamlit as st
 
@@ -109,32 +108,70 @@ if not recs.empty:
     st.subheader("Budget shift suggestions")
     st.dataframe(recs, use_container_width=True, hide_index=True)
 
+channels = table["Channel"].tolist()
 fig = go.Figure(
     data=[
-        go.Bar(
-            name="Budget",
-            x=table["Channel"],
+        go.Scatter(
+            name="Budget ($)",
+            x=channels,
             y=table["Budget ($)"],
-            marker_color="#00a8b8",
+            mode="lines+markers",
+            line=dict(color="#00a8b8", width=3),
+            marker=dict(size=9),
+            yaxis="y",
         ),
-        go.Bar(
+        go.Scatter(
             name="Est. incremental streams",
-            x=table["Channel"],
+            x=channels,
             y=table["Est. Incremental Streams"],
-            marker_color="#008a99",
+            mode="lines+markers",
+            line=dict(color="#008a99", width=3, dash="dot"),
+            marker=dict(size=9, symbol="diamond"),
             yaxis="y2",
         ),
     ]
 )
 fig.update_layout(
     title="Spend vs modeled incremental streams by channel",
-    barmode="group",
+    xaxis=dict(title="Channel", tickangle=-20),
     yaxis=dict(title="Budget ($)"),
-    yaxis2=dict(title="Streams", overlaying="y", side="right"),
-    legend=dict(orientation="h"),
+    yaxis2=dict(title="Est. incremental streams", overlaying="y", side="right"),
+    legend=dict(orientation="h", yanchor="bottom", y=1.02),
     height=420,
+    hovermode="x unified",
 )
-st.plotly_chart(fig, use_container_width=True)
+st.plotly_chart(
+    fig,
+    use_container_width=True,
+    config={
+        "displayModeBar": True,
+        "displaylogo": False,
+        "toImageButtonOptions": {
+            "format": "png",
+            "filename": "lollie_channel_spend_vs_streams",
+            "height": 420,
+            "width": 1200,
+            "scale": 2,
+        },
+    },
+)
+
+chart_export = table[["Channel", "Budget ($)", "Est. Incremental Streams"]].copy()
+download_col1, download_col2 = st.columns(2)
+with download_col1:
+    st.download_button(
+        label="Download chart data (CSV)",
+        data=chart_export.to_csv(index=False).encode("utf-8"),
+        file_name=f"lollie_channel_plan_{datetime.now():%Y%m%d}.csv",
+        mime="text/csv",
+    )
+with download_col2:
+    st.download_button(
+        label="Download interactive chart (HTML)",
+        data=fig.to_html(include_plotlyjs="cdn", full_html=True).encode("utf-8"),
+        file_name=f"lollie_channel_plan_{datetime.now():%Y%m%d}.html",
+        mime="text/html",
+    )
 
 st.caption(
     f"Prototype forecast generated {datetime.now():%Y-%m-%d %H:%M}. "
