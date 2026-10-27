@@ -146,3 +146,19 @@ BUDGET_MODEL_LABELS = {
     "capacity": "Match / capacity cap",
     "project": "Per project / placement",
 }
+
+FUNDING_IN_KIND = "In-kind partner funding"
+FUNDING_BILLING = "Billing credit"
+FUNDING_PREPAID = "Prepaid funds"
+
+# Meta's promotional fund is paid upfront by the label and reimbursed later,
+# so it is shown as prepaid funds rather than as an in-kind grant.
+PREPAID_PROGRAM_KEYS = {"meta_promotional_fund"}
+
+
+def funding_type_for_program(program_key: str | None) -> str:
+    return FUNDING_PREPAID if program_key in PREPAID_PROGRAM_KEYS else FUNDING_IN_KIND
+
+
+def funding_type_for_credit(credit_category: str | None) -> str:
+    return FUNDING_PREPAID if credit_category and "prepaid" in credit_category.lower() else FUNDING_BILLING

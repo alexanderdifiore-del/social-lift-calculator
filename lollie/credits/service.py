@@ -948,6 +948,75 @@ class CreditService:
             )
         return pd.DataFrame(records)
 
+    def funding_overview(self, *, include_demo: bool = False) -> pd.DataFrame:
+        """One compact row per allocation / credit with its funding type.
+
+        Units are kept as reported (USD, impressions, share %, or a billing
+        currency). Amounts in different units are never added together.
+        """
+        from lollie.credits.metrics import compute_credit_balances
+        from lollie.credits.programs import funding_type_for_credit, funding_type_for_program
+
+        demo_alloc = "" if include_demo else "AND pa.is_demo = 0"
+        demo_util = "" if include_demo else "AND ur.is_demo = 0"
+        rows: list[dict[str, Any]] = []
+        with get_connection() as conn:
+            allocations = conn.execute(
+                f"""
+                SELECT pa.id, pa.period_label, pa.artist, pa.track, pa.allocated_value,
+                       pa.value_unit, pr.program_key, pr.program_name, pr.platform,
+                       pp.budgeted_value, pp.period_end,
+                       COALESCE((
+                           SELECT SUM(ur.delivered_value) FROM utilization_records ur
+                           WHERE ur.allocation_id = pa.id {demo_util}
+                       ), 0) AS utilized,
+                       pj.artist AS project_artist, pj.track AS project_track
+                FROM program_allocations pa
+                JOIN partner_programs pr ON pr.id = pa.program_id
+                LEFT JOIN program_periods pp
+                    ON pp.program_id = pa.program_id AND pp.period_label = pa.period_label
+                LEFT JOIN project_requests pj ON pj.id = pa.project_id
+                WHERE 1=1 {demo_alloc}
+                ORDER BY pr.platform, pa.period_label DESC
+                """
+            ).fetchall()
+        for row in allocations:
+            allocated = float(row["allocated_value"] or 0)
+            utilized = float(row["utilized"] or 0)
+            rows.append(
+                {
+                    "Platform": row["platform"],
+                    "Funding type": funding_type_for_program(row["program_key"]),
+                    "Program / credit": row["program_name"],
+                    "Unit": row["value_unit"],
+                    "Credit amount": float(row["budgeted_value"]) if row["budgeted_value"] else None,
+                    "Allocated": allocated,
+                    "Utilized": utilized,
+                    "Remaining": max(allocated - utilized, 0.0),
+                    "Period / expires": row["period_end"] or row["period_label"] or "",
+                    "Artist": row["artist"] or row["project_artist"] or "",
+                    "Campaign / track": row["track"] or row["project_track"] or "",
+                }
+            )
+        for credit in self.list_credits(include_demo=include_demo):
+            balances = compute_credit_balances(credit)
+            rows.append(
+                {
+                    "Platform": credit["platform"],
+                    "Funding type": funding_type_for_credit(credit.get("credit_category")),
+                    "Program / credit": credit["promotion_name"],
+                    "Unit": credit["currency"],
+                    "Credit amount": balances["issued"],
+                    "Allocated": balances["reserved"],
+                    "Utilized": balances["applied"],
+                    "Remaining": balances["remaining"],
+                    "Period / expires": credit.get("expiration_date") or "",
+                    "Artist": credit.get("artist") or "",
+                    "Campaign / track": credit.get("campaign") or "",
+                }
+            )
+        return pd.DataFrame(rows)
+
     def register_exchange_rate(
         self,
         rate_date: str,

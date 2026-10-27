@@ -6,7 +6,7 @@ baseline. It is not proof that any single post or ad caused the difference.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 import numpy as np
@@ -173,4 +173,115 @@ def summarize_impact(frame: pd.DataFrame, mask: pd.Series) -> ImpactSummary:
         lift=lift,
         lift_percent=(lift / expected * 100) if expected > 0 else None,
         baseline_rate=float(frame["expected_baseline_streams"].mean()),
+    )
+
+
+@dataclass
+class StreamingPrep:
+    frame: pd.DataFrame
+    granularity: str = "intraday"
+    notes: list[str] = field(default_factory=list)
+    baseline_estimated: bool = False
+    error: str | None = None
+
+
+def prepare_streaming_frame(
+    raw: pd.DataFrame,
+    timestamp_column: str,
+    actual_column: str,
+    baseline_column: str | None,
+    *,
+    post_timestamp: datetime,
+    impact_window_hours: int,
+    market_column: str | None = None,
+    market: str | None = None,
+) -> StreamingPrep:
+    """Turn an uploaded streaming table into the dashboard frame.
+
+    Uses only what the file contains: the real time spacing is detected (hourly
+    vs daily) and a baseline is estimated from the file's own history when none
+    is supplied. Nothing is interpolated or invented.
+    """
+    notes: list[str] = []
+    if timestamp_column == actual_column:
+        return StreamingPrep(pd.DataFrame(), error="The timestamp column and the actual streams column cannot be the same column.")
+    if baseline_column in (timestamp_column, actual_column):
+        return StreamingPrep(pd.DataFrame(), error="The expected baseline column must be different from the timestamp and actual streams columns.")
+
+    working = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(
+                raw[timestamp_column].astype(str).str.replace("\n", " ", regex=False).str.replace("\r", " ", regex=False),
+                errors="coerce",
+            ),
+            "actual_streams": pd.to_numeric(
+                raw[actual_column].astype(str).str.replace(r"[,\s]", "", regex=True), errors="coerce"
+            ),
+        }
+    )
+    if baseline_column:
+        working["expected_baseline_streams"] = pd.to_numeric(
+            raw[baseline_column].astype(str).str.replace(r"[,\s]", "", regex=True), errors="coerce"
+        )
+    if market_column:
+        working["market"] = raw[market_column].astype(str).str.strip()
+
+    total_rows = len(working)
+    working = working.dropna(subset=["timestamp", "actual_streams"])
+    dropped = total_rows - len(working)
+    if dropped:
+        notes.append(f"{dropped} row(s) were skipped because the date or the streams value could not be read.")
+    if working.empty:
+        return StreamingPrep(
+            pd.DataFrame(),
+            error="No valid timestamp / stream rows were found. Check that dates look like 2026-06-17 12:00:00 and streams are numbers.",
+        )
+
+    if market_column and market and market != "All markets":
+        working = working[working["market"] == market]
+        if working.empty:
+            return StreamingPrep(pd.DataFrame(), error=f"No streaming rows were found for market '{market}'.")
+
+    value_columns = ["actual_streams"] + (["expected_baseline_streams"] if baseline_column else [])
+    duplicated = int(working.duplicated(subset=["timestamp"]).sum())
+    if duplicated:
+        notes.append(
+            f"{duplicated} row(s) shared a timestamp with another row (for example several markets or DSPs); "
+            "they were added together."
+        )
+    working = working.groupby("timestamp", as_index=False)[value_columns].sum(min_count=1)
+    working = working.sort_values("timestamp").reset_index(drop=True)
+
+    granularity = detect_granularity(working["timestamp"])
+    if baseline_column:
+        working["expected_baseline_streams"] = working["expected_baseline_streams"].fillna(
+            working["actual_streams"].median()
+        )
+        estimated = False
+    else:
+        working["expected_baseline_streams"] = estimate_baseline(
+            working, post_timestamp, impact_window_hours, granularity
+        )
+        estimated = True
+        notes.append(
+            "No expected-baseline column was provided, so the baseline was estimated from the uploaded data's own "
+            + ("typical day of the week" if granularity == "daily" else "typical hour of the day")
+            + " outside the impact window."
+        )
+
+    frame = working[["timestamp", "expected_baseline_streams", "actual_streams"]].copy()
+    post_ts = pd.Timestamp(post_timestamp)
+    if post_ts < frame["timestamp"].min() or post_ts > frame["timestamp"].max() + pd.Timedelta(days=1):
+        notes.append("The post date falls outside the uploaded streaming date range, so no impact window could be measured.")
+    return StreamingPrep(frame, granularity, notes, estimated)
+
+
+def manual_summary(expected: float, actual: float) -> ImpactSummary:
+    lift = float(actual) - float(expected)
+    return ImpactSummary(
+        expected=float(expected),
+        actual=float(actual),
+        lift=lift,
+        lift_percent=(lift / expected * 100) if expected > 0 else None,
+        baseline_rate=0.0,
     )

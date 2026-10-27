@@ -112,3 +112,115 @@ def build_commerce_model(
         revenue_per_1k_social_views=gross / (social_reach / 1000) if social_reach > 0 else 0.0,
         revenue_per_lift_stream=gross / social_lift_streams if social_lift_streams > 0 else 0.0,
     )
+
+
+OVERLAY_METRICS = {
+    "Gross Product Revenue": {
+        "column": "Gross Revenue",
+        "label": "Gross Product Revenue",
+        "axis": "Product Revenue ($)",
+        "prefix": "$",
+        "suffix": "",
+    },
+    "Estimated Net Revenue": {
+        "column": "Estimated Net Revenue",
+        "label": "Net Product Revenue",
+        "axis": "Product Revenue ($)",
+        "prefix": "$",
+        "suffix": "",
+    },
+    "Attributed Units Sold": {
+        "column": "Attributed Units",
+        "label": "Attributed Units Sold",
+        "axis": "Attributed Product Units",
+        "prefix": "",
+        "suffix": " units",
+    },
+}
+
+
+@dataclass
+class CommerceOverlay:
+    frame: pd.DataFrame = field(default_factory=pd.DataFrame)
+    label: str = ""
+    axis_title: str = ""
+    prefix: str = ""
+    suffix: str = ""
+    projected: bool = False
+
+    @property
+    def is_empty(self) -> bool:
+        return self.frame.empty
+
+
+def build_commerce_overlay(
+    model: CommerceModel,
+    metric: str,
+    post_timestamp,
+    window_days: int,
+    chart_start,
+    *,
+    allow_projection: bool,
+) -> CommerceOverlay:
+    """Cumulative commerce line for the streaming chart.
+
+    Dated sales inside the window are plotted as reported. Only when
+    ``allow_projection`` is true (simulated / auto-estimate data) and no dated
+    sale falls in the window is the total spread over the window with a decay
+    curve, as in the original Lollie chart.
+    """
+    if model.is_empty:
+        return CommerceOverlay()
+    spec = OVERLAY_METRICS[metric]
+    column = spec["column"]
+    total = {
+        "Gross Revenue": model.gross_revenue,
+        "Estimated Net Revenue": model.net_revenue,
+        "Attributed Units": model.units,
+    }[column]
+
+    overlay = CommerceOverlay(
+        label=spec["label"],
+        axis_title=spec["axis"],
+        prefix=spec["prefix"],
+        suffix=spec["suffix"],
+    )
+
+    post_timestamp = pd.Timestamp(post_timestamp)
+    window_end = post_timestamp + pd.Timedelta(days=window_days)
+    in_window = model.daily.copy()
+    in_window["timestamp"] = pd.to_datetime(in_window["timestamp"], errors="coerce")
+    in_window = in_window[
+        (in_window["timestamp"] >= post_timestamp) & (in_window["timestamp"] < window_end)
+    ].sort_values("timestamp")
+
+    if not in_window.empty:
+        start_row = pd.DataFrame(
+            {
+                "timestamp": [chart_start],
+                "Attributed Units": [0],
+                "Gross Revenue": [0],
+                "Estimated Net Revenue": [0],
+            }
+        )
+        in_window = pd.concat([start_row, in_window], ignore_index=True).sort_values("timestamp")
+        in_window["commerce_value"] = in_window[column]
+        in_window["cumulative_commerce_value"] = in_window["commerce_value"].cumsum()
+        overlay.frame = in_window.reset_index(drop=True)
+        return overlay
+
+    if allow_projection and total > 0:
+        dates = [post_timestamp + pd.Timedelta(days=day) for day in range(window_days)]
+        weights = np.exp(-np.linspace(0, 2.4, window_days))
+        weights = weights / weights.sum()
+        values = total * weights
+        overlay.frame = pd.DataFrame(
+            {
+                "timestamp": dates,
+                "commerce_value": values,
+                "cumulative_commerce_value": np.cumsum(values),
+            }
+        )
+        overlay.projected = True
+        overlay.label = "Projected " + spec["label"]
+    return overlay
