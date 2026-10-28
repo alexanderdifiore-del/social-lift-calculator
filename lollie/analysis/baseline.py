@@ -29,7 +29,7 @@ MIN_PER_WEEKDAY = 3
 METHOD_WEEKDAY = "Same-weekday median"
 METHOD_OVERALL = "Overall median"
 METHOD_NONE = "Not available"
-DRIFT_THRESHOLD = 0.20
+DRIFT_THRESHOLD = 0.10
 
 
 @dataclass

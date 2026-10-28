@@ -168,7 +168,7 @@ def normalize_stream_frame(
     out = _roll_up_to_days(out, issues)
 
     out["source_file"] = source_label
-    out["artist"] = out["artist"].fillna("")
+    out["artist"] = out["artist"].astype(object).where(out["artist"].notna(), "")
     out = out[OUTPUT_COLUMNS].reset_index(drop=True)
     return StreamIngestResult(out, issues, source_label)
 
