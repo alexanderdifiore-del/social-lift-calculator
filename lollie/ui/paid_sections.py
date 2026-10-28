@@ -141,14 +141,19 @@ def ingest_uploaded_files(files: list, default_currency: str, container) -> Paid
 
 
 def show_table(frame: pd.DataFrame, formats: dict[str, str]) -> None:
-    """Show a formatted table, falling back to plain formatting if pandas Styler is unavailable."""
+    """Show a formatted table; missing values read "n/a" instead of a blank or "None"."""
     formats = {key: value for key, value in formats.items() if key in frame.columns}
+    view = frame.copy()
+    for column, pattern in list(formats.items()):
+        if view[column].isna().any():
+            view[column] = [("n/a" if pd.isna(value) else pattern.format(value)) for value in view[column]]
+            formats.pop(column)
     try:
-        st.dataframe(frame.style.format(formats, na_rep="n/a"), width="stretch", hide_index=True)
+        st.dataframe(view.style.format(formats), width="stretch", hide_index=True)
     except (AttributeError, ImportError):
-        plain = frame.copy()
+        plain = view.copy()
         for column, pattern in formats.items():
-            plain[column] = [("n/a" if pd.isna(value) else pattern.format(value)) for value in plain[column]]
+            plain[column] = [pattern.format(value) for value in plain[column]]
         st.dataframe(plain, width="stretch", hide_index=True)
 
 

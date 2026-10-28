@@ -346,6 +346,9 @@ chosen_codes = sorted({all_label_to_code[m] for m in market_choice if all_label_
 streaming_codes = chosen_codes if chosen_codes else None
 
 daily_all = daily_scope_totals(matched, dsp_choice) if not matched.empty else pd.DataFrame()
+no_country_data = not daily_all.empty and set(daily_all["market_code"].unique()) <= {ALL_MARKETS_CODE}
+if no_country_data:
+    streaming_codes = None
 
 view_range = None
 if dates.known:
@@ -396,6 +399,8 @@ elif not dates.known:
     st.info("Enter campaign start and end dates in Campaign Overview to compare streaming before, during and after.")
 else:
     series, agg_notes = aggregate_daily(daily_all, streaming_codes)
+    if no_country_data:
+        agg_notes = ["The streaming file has no country column, so streams for all countries are used and country filters do not apply."] + agg_notes
     if series.empty:
         st.warning("There is no streaming data for the selected countries and DSP.")
     else:

@@ -211,16 +211,16 @@ def render_market_section(table: pd.DataFrame, rank_note: str | None, hidden_row
     shown = table[
         [
             "Market", "Paid activity", "Ad spend", "Landing page views", "Avg daily streams before",
-            "Avg daily streams during", "Avg daily streams after", "Observed change (streams)", "Change vs baseline",
-            "Reading", "Spend and streaming pattern",
+            "Avg daily streams during", "Observed change (streams)", "Change vs baseline", "Reading",
+            "Spend and streaming pattern",
         ]
-    ]
+    ].rename(columns={"Avg daily streams before": "Streams/day before", "Avg daily streams during": "Streams/day during",
+                      "Observed change (streams)": "Observed change"})
     show_table(
         shown,
         {
-            "Ad spend": "{:,.0f}", "Landing page views": "{:,.0f}", "Avg daily streams before": "{:,.0f}",
-            "Avg daily streams during": "{:,.0f}", "Avg daily streams after": "{:,.0f}",
-            "Observed change (streams)": "{:+,.0f}", "Change vs baseline": "{:+.1%}",
+            "Ad spend": "{:,.0f}", "Landing page views": "{:,.0f}", "Streams/day before": "{:,.0f}",
+            "Streams/day during": "{:,.0f}", "Observed change": "{:+,.0f}", "Change vs baseline": "{:+.1%}",
         },
     )
     if rank_note:
@@ -233,8 +233,8 @@ def render_market_section(table: pd.DataFrame, rank_note: str | None, hidden_row
         "does not show what advertising did."
     )
     with st.expander("Country notes and data coverage"):
-        detail = table[["Market", "Streaming data coverage", "Notes"]]
-        show_table(detail, {"Streaming data coverage": "{:.0%}"})
+        detail = table[["Market", "Avg daily streams after", "Streaming data coverage", "Notes"]]
+        show_table(detail, {"Avg daily streams after": "{:,.0f}", "Streaming data coverage": "{:.0%}"})
 
 
 def render_campaign_comparison(paid: pd.DataFrame, daily: pd.DataFrame, settings: AnalysisSettings, currency: str) -> pd.DataFrame:

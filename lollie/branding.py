@@ -52,7 +52,7 @@ HEADER_HTML = textwrap.dedent(
 SECTION_HTML = '<div class="lollie-section">{text}</div>'
 
 
-def render_lollie_header(subtitle: str = "paid media • streaming • commerce intelligence") -> None:
+def render_lollie_header(subtitle: str = "paid media • streaming intelligence") -> None:
     st.markdown(HEADER_HTML.replace("{subtitle}", subtitle), unsafe_allow_html=True)
 
 

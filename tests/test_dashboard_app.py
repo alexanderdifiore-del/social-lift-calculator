@@ -122,3 +122,18 @@ def test_unreadable_streaming_file_is_explained_not_a_crash():
     at.run()
     assert not at.exception
     assert any("date" in e.value.lower() for e in at.error)
+
+
+def test_streaming_file_without_country_or_track_columns_still_works():
+    streams = demo_streams_raw()
+    one = streams[
+        (streams["Track Title"] == "Neon Skyline") & (streams["Country"] == "United States")
+        & (streams["DSP"] == "Spotify") & (streams["Playlist / Source"] == "Total")
+    ][["Date", "Streams"]]
+    at = new_app().run()
+    at.sidebar.file_uploader(key="paid_upload").upload("wavo.csv", demo_paid_raw().to_csv(index=False).encode())
+    at.sidebar.file_uploader(key="stream_upload").upload("streams.csv", one.to_csv(index=False).encode())
+    at.run()
+    assert not at.exception
+    assert "no country column" in page_text(at)
+    assert "Change versus baseline" in [m.label for m in at.metric]
