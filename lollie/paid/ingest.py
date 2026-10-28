@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
+from lollie.geo import normalize_market
 from lollie.paid.schema import (
     CANONICAL_FIELDS,
     DATE_FIELDS,
@@ -213,8 +214,14 @@ def normalize_paid_frame(
                 derived_any = True
         if derived_any:
             issues.append(Issue("info", "Results derived from the matching metric column for each campaign objective (video views, clicks or engagements)."))
-        if (out["objective_family"] == "landing_page_views").any():
-            issues.append(Issue("warning", "Landing page view campaigns need a Results column; results are unavailable for those rows."))
+        unresolved = (out["objective_family"] == "landing_page_views") & out["results"].isna()
+        if unresolved.any():
+            issues.append(
+                Issue(
+                    "warning",
+                    "Landing page view campaigns need a Results or Landing page views column; results are unavailable for those rows.",
+                )
+            )
 
     # --- validation
     if out["spend"].notna().sum() == 0:
@@ -234,7 +241,27 @@ def normalize_paid_frame(
         issues.append(Issue("warning", f"{over} row(s) report more clicks than impressions; verify the column mapping."))
 
     out["campaign_name"] = out["campaign_name"].fillna(out["campaign_id"]).fillna("Unnamed campaign")
-    out["market"] = out["market"].fillna("All markets")
+    codes, labels = [], []
+    unmatched: set[str] = set()
+    for raw_market in out["market"]:
+        code, label = normalize_market(raw_market)
+        codes.append(code)
+        labels.append(label)
+        if code is None:
+            unmatched.add(label)
+    out["market_code"] = codes
+    out["market"] = labels
+    if unmatched:
+        issues.append(
+            Issue(
+                "warning",
+                "These market labels were not recognized as countries and were kept as typed: "
+                + ", ".join(sorted(unmatched)[:10])
+                + ". They cannot be matched to streaming countries.",
+            )
+        )
+    if column("market") is None:
+        issues.append(Issue("info", "No country / market column mapped; rows are treated as 'All markets' and cannot be matched to a streaming country."))
     out["source_file"] = source_label
     out["source_priority"] = out["platform"].map(SOURCE_PRIORITY).fillna(3).astype(int)
     out["reported_platform"] = platform

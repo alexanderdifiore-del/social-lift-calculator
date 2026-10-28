@@ -79,6 +79,7 @@ def aggregate_kpis(frame: pd.DataFrame) -> dict:
         "views": _sum(frame["views"]),
         "engagements": _sum(frame["engagements"]),
         "clicks": clicks,
+        "landing_page_views": _sum(frame["landing_page_views"]) if "landing_page_views" in frame else None,
         "spend": spend,
         "budget": campaign_budget_total(frame),
         "cpm": cpm(spend, impressions),

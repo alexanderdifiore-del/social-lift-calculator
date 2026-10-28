@@ -141,7 +141,35 @@ def test_landing_page_results_come_only_from_a_results_column():
     mapping["results"] = None
     result = normalize_paid_frame(META, mapping, PLATFORM_META)
     assert result.frame["results"].isna().all()
-    assert any("need a Results column" in i.message for i in result.issues)
+    assert any("need a Results or Landing page views column" in i.message for i in result.issues)
+
+
+def test_landing_page_views_column_becomes_the_result_for_landing_page_objectives():
+    raw = pd.DataFrame(
+        {
+            "Date": ["2026-10-25", "2026-10-26"],
+            "Campaign": ["Push", "Push"],
+            "Objective": ["Landing page views", "Landing page views"],
+            "Country": ["Germany", "DE"],
+            "Spend (USD)": [100, 120],
+            "Impressions": [10000, 12000],
+            "Landing Page Views": [400, 500],
+        }
+    )
+    result = normalize_paid_frame(raw, suggest_mapping(list(raw.columns)), PLATFORM_META)
+    assert result.frame["landing_page_views"].tolist() == [400, 500]
+    assert result.frame["results"].tolist() == [400, 500]
+    assert result.frame["result_family"].unique().tolist() == ["landing_page_views"]
+    assert result.frame["market"].unique().tolist() == ["Germany"]
+    assert result.frame["market_code"].unique().tolist() == ["DE"]
+
+
+def test_unrecognized_market_labels_are_flagged_not_guessed():
+    raw = pd.DataFrame({"Date": ["2026-10-25"], "Campaign": ["Push"], "Country": ["Narnia"], "Spend": [10]})
+    result = normalize_paid_frame(raw, suggest_mapping(list(raw.columns)), PLATFORM_META)
+    assert result.frame["market_code"].isna().all()
+    assert result.frame["market"].iloc[0] == "Narnia"
+    assert any("not recognized as countries" in i.message for i in result.issues)
 
 
 def test_missing_spend_is_an_error_and_missing_currency_is_flagged():

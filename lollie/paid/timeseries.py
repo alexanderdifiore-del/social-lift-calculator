@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-SERIES_COLUMNS = ["impressions", "views", "engagements", "clicks", "spend"]
+SERIES_COLUMNS = ["impressions", "views", "engagements", "clicks", "landing_page_views", "spend"]
 
 
 def daily_series(frame: pd.DataFrame) -> pd.DataFrame:

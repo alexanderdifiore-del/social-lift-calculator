@@ -41,12 +41,15 @@ TEXT_FIELDS = [
     "result_type",
     "status",
     "artist",
+    "promoted_item",
+    "isrc",
 ]
 NUMERIC_FIELDS = [
     "impressions",
     "views",
     "engagements",
     "clicks",
+    "landing_page_views",
     "spend",
     "results",
     "budget",
@@ -68,6 +71,9 @@ FIELD_LABELS = {
     "result_type": "Result type",
     "status": "Campaign status",
     "artist": "Artist",
+    "promoted_item": "Promoted song or playlist",
+    "isrc": "ISRC",
+    "landing_page_views": "Landing page views",
     "impressions": "Impressions",
     "views": "Video views",
     "engagements": "Engagements",
@@ -115,6 +121,16 @@ FIELD_PATTERNS: dict[str, list[str]] = {
     "end_date": [r"end_date", r"campaign_end_date", r"flight_end", r"flight_end_date"],
     "status": [r"status", r"campaign_status", r"delivery", r"delivery_status"],
     "artist": [r"artist", r"artist_name"],
+    "isrc": [r"isrc", r"isrc_code"],
+    "promoted_item": [
+        r"promoted_item", r"promoted_content", r"promoted_song", r"promoted_track", r"promoted_playlist",
+        r"track_name", r"track_title", r"track", r"song", r"song_title", r"song_name", r"playlist",
+        r"playlist_name", r"release", r"project", r"asset",
+    ],
+    "landing_page_views": [
+        r"landing_page_views", r"landing_page_view", r"lpv", r"lpvs", r"website_landing_page_views",
+        r"landing_views",
+    ],
 }
 
 # Columns that must never be auto-mapped to a field (they look similar).
@@ -123,6 +139,7 @@ FIELD_EXCLUDE = {
     "results": re.compile(r"^cost_per_|result_rate|results_goal|result_type|result_indicator|result_metric"),
     "clicks": re.compile(r"^cost_per_|ctr|click_through"),
     "impressions": re.compile(r"^cost_per_|cpm"),
+    "landing_page_views": re.compile(r"^cost_per_|rate"),
 }
 
 RESULT_FAMILIES = {
@@ -135,6 +152,7 @@ RESULT_FAMILIES = {
 
 # Metric column that stands in for results when a file has no results column.
 RESULT_SOURCE_COLUMN = {
+    "landing_page_views": "landing_page_views",
     "video_views": "views",
     "clicks": "clicks",
     "engagements": "engagements",
