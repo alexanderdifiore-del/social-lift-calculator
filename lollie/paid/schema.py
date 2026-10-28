@@ -88,9 +88,9 @@ FIELD_LABELS = {
 
 # Regex patterns tested against a normalized (snake_case) column name.
 FIELD_PATTERNS: dict[str, list[str]] = {
-    "date": [r"date", r"day", r"stat_time_day", r"by_day", r"report_date", r"reporting_date"],
-    "platform": [r"platform", r"network", r"publisher", r"channel", r"source"],
-    "campaign_id": [r"campaign_id", r"campaign_no", r"cid"],
+    "date": [r"date", r"day", r"stat_time_day", r"by_day", r"report_date", r"reporting_date", r"reporting_day", r"report_day"],
+    "platform": [r"platform", r"advertising_platform", r"ad_platform", r"network", r"publisher", r"channel", r"source"],
+    "campaign_id": [r"campaign_id", r"campaign_identifier", r"campaign_no", r"campaign_number", r"cid"],
     "campaign_name": [r"campaign_name", r"campaign", r"campaign_title"],
     "objective": [r"objective", r"campaign_objective", r"objective_type", r"campaign_goal", r"campaign_type"],
     "market": [
@@ -117,8 +117,14 @@ FIELD_PATTERNS: dict[str, list[str]] = {
     "result_type": [r"result_type", r"result_indicator", r"result_metric", r"optimization_goal", r"conversion_event"],
     "budget": [r"budget", r"total_budget", r"campaign_budget", r"lifetime_budget", r"budget_total"],
     "results_goal": [r"results_goal", r"result_goal", r"goal_results", r"target_results", r"target", r"goal"],
-    "start_date": [r"start_date", r"campaign_start_date", r"flight_start", r"flight_start_date"],
-    "end_date": [r"end_date", r"campaign_end_date", r"flight_end", r"flight_end_date"],
+    "start_date": [
+        r"start_date", r"campaign_start_date", r"flight_start", r"flight_start_date", r"campaign_start",
+        r"start", r"launch_date", r"begin_date", r"campaign_begin_date",
+    ],
+    "end_date": [
+        r"end_date", r"campaign_end_date", r"flight_end", r"flight_end_date", r"campaign_end",
+        r"end", r"stop_date", r"campaign_stop_date",
+    ],
     "status": [r"status", r"campaign_status", r"delivery", r"delivery_status"],
     "artist": [r"artist", r"artist_name"],
     "isrc": [r"isrc", r"isrc_code"],
