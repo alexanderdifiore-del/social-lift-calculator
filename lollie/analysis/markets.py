@@ -19,7 +19,7 @@ from lollie.geo import ALL_MARKETS_CODE, market_label
 
 MIN_OVERALL_CHANGE = 0.05
 PAID = "Paid"
-LOW = "Low or none (reference only)"
+LOW = "Reference only"
 
 MARKET_COLUMNS = [
     "Market", "market_code", "Paid activity", "Ad spend", "Impressions", "Clicks", "Landing page views",
@@ -29,8 +29,8 @@ MARKET_COLUMNS = [
 ]
 
 
-def _sum(series: pd.Series) -> float | None:
-    return float(series.sum()) if series.notna().any() else None
+def _sum(series: pd.Series) -> float:
+    return float(series.sum()) if series.notna().any() else float("nan")
 
 
 def market_comparison(
@@ -58,9 +58,9 @@ def market_comparison(
         dates = campaign_dates(mine) if not mine.empty else None
         start = dates.start if dates and dates.known else campaign_start
         end = dates.end if dates and dates.known else campaign_end
-        spend = _sum(mine["spend"]) if not mine.empty else None
-        share = (spend or 0.0) / total_spend if total_spend else 0.0
-        activity = PAID if spend and share >= low_paid_share else LOW
+        spend = _sum(mine["spend"]) if not mine.empty else float("nan")
+        share = (0.0 if pd.isna(spend) else spend) / total_spend if total_spend else 0.0
+        activity = PAID if pd.notna(spend) and spend > 0 and share >= low_paid_share else LOW
 
         series, notes = aggregate_daily(daily, [code])
         analysis = analyze_campaign_window(series, start, end, settings) if not series.empty else None
@@ -93,9 +93,9 @@ def market_comparison(
                 "market_code": code,
                 "Paid activity": activity,
                 "Ad spend": spend,
-                "Impressions": _sum(mine["impressions"]) if not mine.empty else None,
-                "Clicks": _sum(mine["clicks"]) if not mine.empty else None,
-                "Landing page views": _sum(mine["landing_page_views"]) if not mine.empty else None,
+                "Impressions": _sum(mine["impressions"]) if not mine.empty else float("nan"),
+                "Clicks": _sum(mine["clicks"]) if not mine.empty else float("nan"),
+                "Landing page views": _sum(mine["landing_page_views"]) if not mine.empty else float("nan"),
                 "Avg daily streams before": analysis.baseline.average if analysis else None,
                 "Avg daily streams during": analysis.during.average if analysis else None,
                 "Avg daily streams after": analysis.post.average if analysis else None,

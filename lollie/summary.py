@@ -18,7 +18,7 @@ class Summary:
     sections: dict[str, list[str]] = field(default_factory=dict)
 
     def to_markdown(self, title: str = "") -> str:
-        lines = [f"## {title}", ""] if title else []
+        lines = [f"### {title}", ""] if title else []
         for name in SECTION_ORDER:
             items = self.sections.get(name) or []
             if not items:
@@ -29,11 +29,11 @@ class Summary:
         return "\n".join(lines).strip() + "\n"
 
 
-def _money(value: float | None, currency: str) -> str:
+def _money(value: float | None, currency: str, digits: int = 0) -> str:
     if value is None or pd.isna(value):
         return "n/a"
     symbol = {"USD": "$", "EUR": "€", "GBP": "£"}.get(currency)
-    return f"{symbol}{value:,.0f}" if symbol else f"{value:,.0f} {currency}"
+    return f"{symbol}{value:,.{digits}f}" if symbol else f"{value:,.{digits}f} {currency}"
 
 
 def _num(value: float | None) -> str:
@@ -72,8 +72,8 @@ def build_summary(
         + "."
     )
     if kpis.get("cpm") is not None:
-        cpc = f" and CPC was {kpis['cpc']:,.2f} {currency}" if kpis.get("cpc") is not None else ""
-        ads.append(f"CPM was {kpis['cpm']:,.2f} {currency}{cpc}.")
+        cpc = f" and CPC was {_money(kpis['cpc'], currency, 2)}" if kpis.get("cpc") is not None else ""
+        ads.append(f"CPM was {_money(kpis['cpm'], currency, 2)}{cpc}.")
     ads.extend(results_text)
 
     streaming = summary.sections["Streaming"]

@@ -1,9 +1,4 @@
-"""Plotly charts for the unified Lollie dashboard.
-
-The streaming chart keeps the original expected-vs-actual layout and adds
-optional overlays (paid flights and daily spend, organic posts, commerce).
-Overlays use only data that was actually loaded; nothing is interpolated.
-"""
+"""Plotly charts for the Lollie V2 dashboard."""
 
 from __future__ import annotations
 
@@ -11,15 +6,13 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from lollie.commerce import CommerceOverlay
-from lollie.streaming import granularity_label
+from lollie.analysis.baseline import WindowAnalysis, trend_line
 
 TEAL = "#00a8b8"
+TEAL_DARK = "#008a99"
 TEAL_SOFT = "rgba(0, 168, 184, 0.45)"
-TEAL_STRONG = "rgba(0, 168, 184, 0.90)"
-GREEN_SOFT = "rgba(46, 184, 114, 0.85)"
-FLIGHT_FILL = "rgba(0, 168, 184, 0.07)"
-
+GREEN = "rgba(46, 184, 114, 0.30)"
+GRAY = "#7a8793"
 FONT = dict(family="Helvetica Neue, Arial, sans-serif")
 
 
@@ -27,297 +20,161 @@ def _py(ts) -> object:
     return pd.Timestamp(ts).to_pydatetime()
 
 
-def summary_bar_chart(expected: float, actual: float, lift: float, unit_label: str = "Streams") -> go.Figure:
-    values = [expected, actual, lift]
-    figure = go.Figure()
-    figure.add_trace(
-        go.Bar(
-            x=["Expected Baseline", "Actual Streams", "Estimated Social Lift"],
-            y=values,
-            text=[f"{value:,.0f}" for value in values],
-            textposition="outside",
-            marker=dict(
-                color=[TEAL_SOFT, TEAL_STRONG, GREEN_SOFT],
-                line=dict(color="rgba(0,0,0,0.15)", width=1),
-            ),
-        )
-    )
-    figure.update_layout(
-        title="Campaign Performance Summary",
-        xaxis_title="Metric",
-        yaxis_title=unit_label,
-        template="plotly_white",
-        height=420,
-        margin=dict(l=40, r=40, t=70, b=40),
-        font=FONT,
-    )
-    return figure
-
-
-def commerce_bar_chart(by_product: pd.DataFrame) -> go.Figure:
-    figure = go.Figure()
-    figure.add_trace(
-        go.Bar(
-            x=by_product["Product Category"],
-            y=by_product["Gross Revenue"],
-            name="Gross Revenue",
-            text=[f"${value:,.0f}" for value in by_product["Gross Revenue"]],
-            textposition="outside",
-            marker=dict(color=TEAL_STRONG, line=dict(color="rgba(0,0,0,0.15)", width=1)),
-        )
-    )
-    figure.add_trace(
-        go.Bar(
-            x=by_product["Product Category"],
-            y=by_product["Estimated Net Revenue"],
-            name="Estimated Net Revenue",
-            text=[f"${value:,.0f}" for value in by_product["Estimated Net Revenue"]],
-            textposition="outside",
-            marker=dict(color=GREEN_SOFT, line=dict(color="rgba(0,0,0,0.15)", width=1)),
-        )
-    )
-    figure.update_layout(
-        title="Attributed Product Revenue by Category",
-        xaxis_title="Product Category",
-        yaxis_title="Revenue ($)",
-        barmode="group",
-        template="plotly_white",
-        height=500,
-        margin=dict(l=40, r=40, t=80, b=120),
-        font=FONT,
-        legend_title="Revenue Type",
-    )
-    return figure
-
-
-def merge_flights(flights: pd.DataFrame) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
-    """Union of overlapping campaign flights, for one shaded band on the chart."""
-    if flights is None or flights.empty:
-        return []
-    spans = sorted(zip(flights["start"], flights["end"]))
-    merged: list[list[pd.Timestamp]] = []
-    for start, end in spans:
-        if merged and start <= merged[-1][1]:
-            merged[-1][1] = max(merged[-1][1], end)
-        else:
-            merged.append([start, end])
-    return [(start, end) for start, end in merged]
-
-
-def streaming_chart(
+def streaming_intelligence_chart(
+    analysis: WindowAnalysis,
     *,
-    df: pd.DataFrame,
-    impact_mask: pd.Series,
-    granularity: str,
-    post_timestamp,
-    impact_end,
-    impact_window_hours: int,
-    song_title: str,
-    extra_posts: list[tuple[object, str]] | None = None,
-    commerce: CommerceOverlay | None = None,
-    show_commerce_baseline: bool = True,
-    commerce_baseline_percent: float = 35.0,
-    paid_daily: pd.DataFrame | None = None,
-    paid_flights: pd.DataFrame | None = None,
-    paid_currency: str = "USD",
-    paid_estimate_note: str = "",
+    title: str,
+    spend_daily: pd.DataFrame | None = None,
+    currency: str = "USD",
+    organic_posts: list[tuple[pd.Timestamp, str]] | None = None,
+    impact_days: int = 2,
+    show_trend: bool = True,
+    view_range: tuple[pd.Timestamp, pd.Timestamp] | None = None,
 ) -> go.Figure:
-    has_commerce = commerce is not None and not commerce.is_empty
-    has_paid = paid_daily is not None and not paid_daily.empty
-
-    chart_start = df["timestamp"].min()
-    chart_end = df["timestamp"].max() + (pd.Timedelta(days=1) if granularity == "daily" else pd.Timedelta(hours=1))
-
-    if has_paid:
-        paid_daily = paid_daily[
-            (paid_daily["date"] >= chart_start.normalize()) & (paid_daily["date"] <= chart_end)
-        ]
-        has_paid = not paid_daily.empty
-
-    rows = 2 if has_paid else 1
+    """Actual vs expected streams (top) with daily ad spend on the same dates (bottom)."""
+    frame = analysis.series
+    has_spend = spend_daily is not None and not spend_daily.empty
+    start, end = analysis.start, analysis.end
     figure = make_subplots(
-        rows=rows,
+        rows=2 if has_spend else 1,
         cols=1,
         shared_xaxes=True,
-        vertical_spacing=0.06,
-        row_heights=[0.74, 0.26] if rows == 2 else [1.0],
-        specs=[[{"secondary_y": True}]] + ([[{"secondary_y": False}]] if rows == 2 else []),
+        vertical_spacing=0.07,
+        row_heights=[0.7, 0.3] if has_spend else [1.0],
     )
 
-    figure.add_trace(
-        go.Scatter(
-            x=df["timestamp"],
-            y=df["expected_baseline_streams"],
-            mode="lines",
-            name="Expected Baseline Streams",
-            line=dict(width=2),
-            hovertemplate="Time: %{x}<br>Expected: %{y:,.0f}<extra></extra>",
-        ),
-        row=1,
-        col=1,
-    )
-    figure.add_trace(
-        go.Scatter(
-            x=df["timestamp"],
-            y=df["actual_streams"],
-            mode="lines",
-            name="Actual Streams",
-            line=dict(width=3),
-            hovertemplate="Time: %{x}<br>Actual: %{y:,.0f}<extra></extra>",
-        ),
-        row=1,
-        col=1,
-    )
-
-    lift_df = df.loc[impact_mask]
-    if not lift_df.empty:
+    expected = frame[frame["expected"].notna()]
+    if not expected.empty:
         figure.add_trace(
             go.Scatter(
-                x=pd.concat([lift_df["timestamp"], lift_df["timestamp"][::-1]]),
-                y=pd.concat([lift_df["actual_streams"], lift_df["expected_baseline_streams"][::-1]]),
-                fill="toself",
-                name="Observed difference vs. baseline (modeled lift)",
-                opacity=0.25,
-                line=dict(width=0),
-                hoverinfo="skip",
+                x=expected["date"], y=expected["expected"], mode="lines", name="Expected baseline streams",
+                line=dict(color=GRAY, width=2, dash="dash"),
+                hovertemplate="Expected: %{y:,.0f}<extra></extra>",
             ),
-            row=1,
-            col=1,
+            row=1, col=1,
+        )
+    figure.add_trace(
+        go.Scatter(
+            x=frame["date"], y=frame["actual"], mode="lines", name="Actual streams", connectgaps=False,
+            line=dict(color=TEAL, width=3), hovertemplate="Actual: %{y:,.0f}<extra></extra>",
+        ),
+        row=1, col=1,
+    )
+    if show_trend:
+        trend = trend_line(frame.set_index("date")["actual"])
+        figure.add_trace(
+            go.Scatter(
+                x=trend.index, y=trend.values, mode="lines", name="7-day trend",
+                line=dict(color=TEAL_DARK, width=1.5, dash="dot"), hovertemplate="7-day trend: %{y:,.0f}<extra></extra>",
+            ),
+            row=1, col=1,
         )
 
-    if has_paid:
-        spans = merge_flights(paid_flights)
-        if spans:
-            figure.add_trace(
-                go.Scatter(
-                    x=[None],
-                    y=[None],
-                    mode="markers",
-                    marker=dict(size=10, color=TEAL, symbol="square", opacity=0.35),
-                    name="Paid flight window",
-                    hoverinfo="skip",
-                ),
-                row=1,
-                col=1,
+    after = frame[(frame["window"].isin(["During", "After"])) & frame["actual"].notna() & frame["expected"].notna()]
+    if not after.empty:
+        figure.add_trace(
+            go.Scatter(
+                x=pd.concat([after["date"], after["date"][::-1]]),
+                y=pd.concat([after["actual"], after["expected"][::-1]]),
+                fill="toself", name="Actual minus expected", fillcolor=GREEN, line=dict(width=0), hoverinfo="skip",
+            ),
+            row=1, col=1,
+        )
+
+    base = analysis.baseline
+    for x0, x1, color, label in (
+        (base.start, base.end + pd.Timedelta(days=1), "rgba(122,135,147,0.07)", "Baseline window"),
+        (start, end + pd.Timedelta(days=1), "rgba(0,168,184,0.10)", "Campaign"),
+    ):
+        figure.add_vrect(
+            x0=_py(x0), x1=_py(x1), fillcolor=color, line_width=0, layer="below",
+            annotation_text=label, annotation_position="top left", annotation_font_size=11, row=1, col=1,
+        )
+    if analysis.post.days_in_window:
+        figure.add_vrect(
+            x0=_py(analysis.post.start), x1=_py(analysis.post.end + pd.Timedelta(days=1)),
+            fillcolor="rgba(46,184,114,0.06)", line_width=0, layer="below",
+            annotation_text="After campaign", annotation_position="top left", annotation_font_size=11, row=1, col=1,
+        )
+    for moment, label in ((start, "Campaign start"), (end + pd.Timedelta(days=1), "Campaign end")):
+        figure.add_vline(
+            x=_py(moment), line_width=2, line_dash="dash", line_color=TEAL_DARK,
+            annotation_text=label, annotation_position="top", annotation_font_size=11, row=1, col=1,
+        )
+
+    chart_min, chart_max = frame["date"].min(), frame["date"].max() + pd.Timedelta(days=1)
+    for moment, label in organic_posts or []:
+        if chart_min <= moment <= chart_max:
+            figure.add_vline(
+                x=_py(moment), line_width=2, line_dash="dot", line_color="#e08a00",
+                annotation_text=label, annotation_position="bottom", annotation_font_size=10, row=1, col=1,
             )
-            for start, end in spans:
+            if impact_days > 0:
                 figure.add_vrect(
-                    x0=_py(max(start, chart_start.normalize())),
-                    x1=_py(min(end, chart_end)),
-                    fillcolor=TEAL,
-                    opacity=0.07,
-                    line_width=0,
-                    layer="below",
-                    row=1,
-                    col=1,
+                    x0=_py(moment), x1=_py(moment + pd.Timedelta(days=impact_days)),
+                    fillcolor="rgba(224,138,0,0.10)", line_width=0, layer="below", row=1, col=1,
                 )
+
+    if has_spend:
+        spend = spend_daily[(spend_daily["date"] >= chart_min) & (spend_daily["date"] <= chart_max)]
         figure.add_trace(
             go.Bar(
-                x=paid_daily["date"],
-                y=paid_daily["spend"],
-                name=f"Daily paid spend ({paid_currency})",
-                marker=dict(color=TEAL_SOFT),
-                hovertemplate="Date: %{x|%b %d}<br>Spend: %{y:,.2f} " + paid_currency + "<extra></extra>",
+                x=spend["date"], y=spend["spend"], name=f"Daily ad spend ({currency})", marker=dict(color=TEAL_SOFT),
+                hovertemplate="Ad spend: %{y:,.2f} " + currency + "<extra></extra>",
             ),
-            row=2,
-            col=1,
+            row=2, col=1,
         )
-        figure.update_yaxes(title_text=f"Spend ({paid_currency})", row=2, col=1)
+        figure.update_yaxes(title_text=f"Ad spend ({currency})", row=2, col=1)
 
-    figure.add_vline(
-        x=_py(post_timestamp),
-        line_width=2,
-        line_dash="dash",
-        annotation_text="Social Post Goes Live",
-        annotation_position="top",
-        row=1,
-        col=1,
-    )
-    figure.add_vrect(
-        x0=_py(post_timestamp),
-        x1=_py(impact_end),
-        fillcolor="gray",
-        opacity=0.08,
-        line_width=0,
-        annotation_text=f"{impact_window_hours}h Impact Window",
-        annotation_position="top left",
-        row=1,
-        col=1,
-    )
-
-    for timestamp, label in extra_posts or []:
-        figure.add_vline(
-            x=_py(timestamp),
-            line_width=2,
-            line_dash="dot",
-            annotation_text=label,
-            annotation_position="top",
-            row=1,
-            col=1,
-        )
-
-    if has_commerce:
-        frame = commerce.frame
-        if show_commerce_baseline:
-            figure.add_trace(
-                go.Scatter(
-                    x=frame["timestamp"],
-                    y=frame["cumulative_commerce_value"] * (commerce_baseline_percent / 100),
-                    mode="lines",
-                    name="Expected Product Revenue Baseline",
-                    line=dict(width=2, dash="dash"),
-                    hovertemplate=(
-                        "Date: %{x}<br>Expected Commerce Baseline: "
-                        + commerce.prefix
-                        + "%{y:,.0f}"
-                        + commerce.suffix
-                        + "<extra></extra>"
-                    ),
-                ),
-                row=1,
-                col=1,
-                secondary_y=True,
-            )
-        figure.add_trace(
-            go.Scatter(
-                x=frame["timestamp"],
-                y=frame["cumulative_commerce_value"],
-                mode="lines+markers",
-                name="Attributed Product Revenue",
-                line=dict(width=3),
-                hovertemplate=(
-                    "Date: %{x}<br>"
-                    + commerce.label
-                    + ": "
-                    + commerce.prefix
-                    + "%{y:,.0f}"
-                    + commerce.suffix
-                    + "<extra></extra>"
-                ),
-            ),
-            row=1,
-            col=1,
-            secondary_y=True,
-        )
-        figure.update_yaxes(title_text=commerce.axis_title, showgrid=False, row=1, col=1, secondary_y=True)
-    else:
-        figure.update_yaxes(visible=False, row=1, col=1, secondary_y=True)
-
-    figure.update_yaxes(title_text=granularity_label(granularity), row=1, col=1, secondary_y=False)
-    figure.update_xaxes(title_text="Date / Time", row=rows, col=1)
-    figure.update_xaxes(range=[_py(chart_start), _py(chart_end)])
-
-    title = f"{song_title} Streaming Trend: Expected vs Actual"
-    if paid_estimate_note:
-        title += f"<br><sup>{paid_estimate_note}</sup>"
+    figure.update_yaxes(title_text="Daily streams", row=1, col=1)
+    figure.update_xaxes(title_text="Date", row=2 if has_spend else 1, col=1)
+    if view_range:
+        figure.update_xaxes(range=[_py(view_range[0]), _py(view_range[1] + pd.Timedelta(days=1))])
     figure.update_layout(
-        title=title,
-        legend_title="Chart Labels",
-        hovermode="x unified",
-        template="plotly_white",
-        height=675 if rows == 1 else 780,
-        margin=dict(l=40, r=40, t=80, b=40),
-        font=FONT,
-        bargap=0.15,
+        title=title, hovermode="x unified", template="plotly_white", font=FONT,
+        height=720 if has_spend else 560, margin=dict(l=40, r=40, t=130, b=40), bargap=0.15,
+        legend=dict(orientation="h", yanchor="bottom", y=1.08, xanchor="left", x=0),
+    )
+    return figure
+
+
+def market_chart(table: pd.DataFrame) -> go.Figure:
+    """Ad spend and observed streaming change for the same countries, side by side."""
+    shown = table.head(12).iloc[::-1]
+    figure = make_subplots(
+        rows=1, cols=2, shared_yaxes=True, horizontal_spacing=0.04,
+        subplot_titles=("Ad spend", "Streaming change vs baseline (during campaign)"),
+    )
+    figure.add_trace(
+        go.Bar(
+            y=shown["Market"], x=shown["Ad spend"].fillna(0), orientation="h", marker=dict(color=TEAL_SOFT), name="Ad spend",
+            hovertemplate="%{y}: %{x:,.0f}<extra></extra>",
+        ),
+        row=1, col=1,
+    )
+    change = shown["Change vs baseline"]
+    colors = []
+    for value, activity in zip(change, shown["Paid activity"]):
+        if pd.isna(value):
+            colors.append("rgba(0,0,0,0)")
+        elif activity != "Paid":
+            colors.append("#c9d1d6")
+        else:
+            colors.append(TEAL if value >= 0.10 else GRAY)
+    figure.add_trace(
+        go.Bar(
+            y=shown["Market"], x=change * 100, orientation="h", marker=dict(color=colors), name="Change vs baseline",
+            hovertemplate="%{y}: %{x:+.1f}%<extra></extra>", text=[("n/a" if pd.isna(v) else f"{v:+.0%}") for v in change],
+            textposition="outside",
+        ),
+        row=1, col=2,
+    )
+    top = float(change.max()) * 100 if change.notna().any() else 10.0
+    bottom = min(float(change.min()) * 100, 0.0) if change.notna().any() else 0.0
+    figure.update_xaxes(title_text="Spend", row=1, col=1)
+    figure.update_xaxes(title_text="% vs baseline", ticksuffix="%", range=[bottom * 1.3, max(top, 5.0) * 1.3], row=1, col=2)
+    figure.update_layout(
+        template="plotly_white", font=FONT, showlegend=False, height=max(320, 60 * len(shown) + 120),
+        margin=dict(l=40, r=60, t=60, b=40),
     )
     return figure

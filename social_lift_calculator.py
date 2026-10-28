@@ -1,811 +1,531 @@
-"""lollie: paid advertising + organic social -> streaming performance -> commerce revenue.
+"""Lollie V2: paid media and streaming intelligence.
 
-One dashboard. Production mode (the default) uses only data you upload or type in.
-Simulated data is available only when Demo mode is switched on in the sidebar's
-"Advanced / Demo" section.
+Question this prototype answers: when we run paid media campaigns, what happens to the
+streaming performance of the music we are promoting?
+
+Everything is observational. Lollie compares streaming during and after a campaign with
+a baseline from before it. It does not claim the advertising caused any change.
+Real files are processed in this session only; nothing is sent to any outside service.
 """
 
-from datetime import datetime, timedelta
+from __future__ import annotations
+
+from datetime import datetime
 
 import pandas as pd
 import streamlit as st
 
+from lollie.analysis.baseline import AnalysisSettings, aggregate_daily, analyze_campaign_window, baseline_window
+from lollie.analysis.campaigns import CampaignDates, campaign_dates, overlap_notes
+from lollie.analysis.markets import PAID, market_comparison, market_rank_note
+from lollie.analysis.relationships import lag_relationship, spend_series
 from lollie.branding import render_lollie_header, render_section_title
-from lollie.commerce import build_commerce_model, build_commerce_overlay
-from lollie.constants import (
-    ARTIST_TIER_MULTIPLIER,
-    DSP_MULTIPLIER,
-    MARKET_MULTIPLIER,
-    PLATFORM_MULTIPLIER,
-    POST_TYPE_MULTIPLIER,
+from lollie.demo import DEMO_LABEL, load_demo
+from lollie.geo import ALL_MARKETS_CODE
+from lollie.paid.timeseries import daily_series
+from lollie.streams.tracks import (
+    daily_scope_totals,
+    match_streams,
+    tracks_from_stream_frame,
 )
-from lollie.paid.demo import synthetic_paid_media
-from lollie.paid.metrics import Thresholds, as_of_default, campaign_market_table
-from lollie.paid.report import build_recap
-from lollie.paid.timeseries import daily_series, flights, overlap_report
-from lollie.streaming import (
-    apply_social_lift,
-    granularity_label,
-    impact_window_mask,
-    manual_summary,
-    simulate_baseline,
-    summarize_impact,
-)
-from lollie.ui import charts
-from lollie.ui.commerce_inputs import render_commerce_sidebar
-from lollie.ui.credits_section import render_credits_compact
+from lollie.summary import build_summary
+from lollie.ui.campaign_tracks import choose_campaign_scope
 from lollie.ui.paid_sections import (
-    PaidData,
     UPLOAD_TYPES,
+    PaidData,
     ingest_uploaded_files,
-    link_campaigns,
-    money,
-    number,
     pick_currency,
-    render_audience_creative,
-    render_kpis,
-    render_market_table,
-    render_results,
     show_issues,
 )
-from lollie.ui.streaming_import import render_streaming_import
+from lollie.ui.sections import (
+    render_campaign_comparison,
+    render_market_section,
+    render_paid_section,
+    render_source_streams,
+    render_streaming_section,
+    render_track_breakdown,
+    results_sentences,
+)
+from lollie.ui.stream_import import StreamData, ingest_stream_files
 
 st.set_page_config(page_title="lollie", page_icon="🍭", layout="wide")
 
-render_lollie_header("paid media • streaming • commerce intelligence")
+render_lollie_header("paid media • streaming intelligence")
 
-# The Demo toggle lives at the bottom of the sidebar but is needed here first;
-# Streamlit has already stored its value before the script runs.
+# The Demo switch sits at the bottom of the sidebar but is needed first; Streamlit has
+# already stored its value before the script runs.
 demo_mode = bool(st.session_state.get("lollie_demo_mode", False))
 
+
+@st.cache_data(show_spinner=False)
+def _demo_data():
+    return load_demo()
+
+
 # -----------------------------
-# SIDEBAR INPUTS
+# SIDEBAR
 # -----------------------------
 
 st.sidebar.title("Campaign Inputs")
 
-artist_name = st.sidebar.text_input("Artist Name", "Example Artist")
-song_title = st.sidebar.text_input("Song Title", "Example Song")
+st.sidebar.subheader("1 · Paid media report")
+if demo_mode:
+    st.sidebar.caption("Demo mode is on: synthetic data is shown and uploaded files are ignored.")
+paid_files = st.sidebar.file_uploader(
+    "WAVO or other advertising report (CSV or Excel)",
+    type=UPLOAD_TYPES,
+    accept_multiple_files=True,
+    key="paid_upload",
+    disabled=demo_mode,
+    help="Daily rows with campaign, date, country, platform and spend work best. Column matching is shown after upload.",
+)
+paid_default_currency = st.sidebar.selectbox(
+    "Currency if the file does not say", ["USD", "EUR", "GBP", "CAD", "AUD", "MXN", "BRL"], key="paid_currency"
+)
+
+st.sidebar.subheader("2 · Streaming report")
+stream_files = st.sidebar.file_uploader(
+    "Opus or other approved streaming export (CSV or Excel)",
+    type=UPLOAD_TYPES,
+    accept_multiple_files=True,
+    key="stream_upload",
+    disabled=demo_mode,
+    help="Daily streams by date, with track, country and service when available.",
+)
+track_file = st.sidebar.file_uploader(
+    "3 · Track list for a playlist (optional)",
+    type=UPLOAD_TYPES,
+    key="track_upload",
+    disabled=demo_mode,
+    help="A list of the tracks on the playlist or in the campaign: title, ISRC and optional added / removed dates.",
+)
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("Analysis windows")
+baseline_days = st.sidebar.slider(
+    "Baseline length (days before launch)", 7, 56, 28, help="Streams in these days set the expected level."
+)
+post_days = st.sidebar.slider(
+    "After-campaign window (days)", 0, 28, 14, help="Days after the campaign ends that are checked for a lingering change."
+)
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("Opus / Track Info")
-
-opus_campaign_id = st.sidebar.text_input("Opus Campaign ID", "OPUS-DEMO-001")
-isrc = st.sidebar.text_input("ISRC", "USAT00000000")
+opus_campaign_id = st.sidebar.text_input("Opus Campaign ID (optional)", "", help="Reference only; shown in the summary.")
 release_phase = st.sidebar.selectbox(
-    "Release Phase",
-    ["Pre-release", "Release week", "Catalog/reactivation", "Tour moment", "Sync/viral moment"],
+    "Release Phase (optional)",
+    ["Not specified", "Pre-release", "Release week", "Catalog/reactivation", "Tour moment", "Sync/viral moment"],
+    help="Context only; it does not change any numbers.",
 )
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("Social Post Event")
-
-platform = st.sidebar.selectbox(
-    "Platform",
-    [
-        "TikTok",
-        "Instagram Reels",
-        "YouTube Shorts",
-        "YouTube Video",
-        "YouTube Visualizer",
-        "YouTube Music Video",
-        "YouTube Live Performance",
-        "Snapchat",
-    ],
-)
-
-post_type = st.sidebar.selectbox(
-    "Post Type",
-    ["Organic artist post", "Influencer post", "Paid boost", "UGC trend"],
-)
-
-post_date = st.sidebar.date_input("Post Date", datetime.now().date())
-
-post_hour = st.sidebar.slider(
-    "Post Hour of Day",
-    min_value=0,
-    max_value=23,
-    value=18,
-    help="This is the clock hour when the post went live. Example: 18 = 6 PM, 23 = 11 PM.",
-)
-
-post_timestamp = datetime.combine(post_date, datetime.min.time()) + timedelta(hours=post_hour)
-
-impact_window_hours = st.sidebar.slider(
-    "Impact Window Length",
-    min_value=6,
-    max_value=168,
-    value=24,
-    step=6,
-    help="How many hours after the social post you want to measure lift.",
-)
-
-multi_post = st.sidebar.checkbox(
-    "Simulate Second Post" if demo_mode else "Mark a Second Post",
-    False,
-    help="Adds a second post to the chart."
-    + (" In Demo mode it also adds a smaller simulated lift." if demo_mode else " It is a marker only; your data is not changed."),
-)
-second_post_delay = 48
-if multi_post:
-    second_post_delay = st.sidebar.slider(
-        "Second Post Delay After First Post", min_value=6, max_value=168, value=48, step=6
+st.sidebar.subheader("Social Post Event (optional)")
+mark_post = st.sidebar.checkbox("Mark an organic social post on the chart", False)
+organic_posts: list[tuple[pd.Timestamp, str]] = []
+impact_days = 2
+if mark_post:
+    post_platform = st.sidebar.selectbox(
+        "Platform",
+        ["TikTok", "Instagram Reels", "YouTube Shorts", "YouTube Video", "YouTube Visualizer", "YouTube Music Video",
+         "YouTube Live Performance", "Snapchat"],
     )
-
+    post_type = st.sidebar.selectbox("Post Type", ["Organic artist post", "Influencer post", "UGC trend"])
+    post_date = st.sidebar.date_input("Post Date", datetime.now().date())
+    impact_days = st.sidebar.slider(
+        "Impact Window Length (days)", 1, 7, 2, help="Days after the post that are shaded on the chart."
+    )
+    organic_posts.append((pd.Timestamp(post_date), f"{post_platform} · {post_type}"))
 with st.sidebar.expander("More organic posts to mark on the chart"):
     extra_posts_text = st.text_area(
-        "One per line: date time, label",
+        "One per line: date, label",
         value="",
-        placeholder="2026-10-21 18:00, Instagram Reel",
+        placeholder="2026-03-10, Instagram Reel",
         help="Adds a dotted marker to the streaming chart. Nothing else is changed.",
         key="extra_posts_text",
     )
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("Artist / Market Assumptions")
-
-primary_market = st.sidebar.selectbox("Primary Market", ["US", "Global", "Europe", "LATAM", "APAC"])
-dsp_focus = st.sidebar.selectbox(
-    "DSP Focus",
-    ["All DSPs", "Spotify-heavy", "Apple-heavy", "YouTube Music-heavy", "Amazon-heavy"],
-)
-analysis_days = st.sidebar.selectbox(
-    "Analysis Window",
-    [7, 14, 30],
-    index=0,
-    help="Length of the simulated timeline in Demo mode. Uploaded data uses its own date range.",
-)
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("Streaming Data")
-
-if demo_mode:
-    data_mode = st.sidebar.radio(
-        "Data Source Mode",
-        ["Auto simulation", "Manual demo inputs", "CSV upload"],
-        help="Choose whether the dashboard uses simulated data, manual demo numbers, or an uploaded file.",
-    )
-else:
-    data_mode = st.sidebar.radio(
-        "Data Source Mode",
-        ["CSV / Excel upload", "Manual entry"],
-        help="Upload hourly or daily streaming data, or type the expected and actual totals for the impact window.",
-    )
-
-uploaded_streaming = None
-if data_mode in ("CSV upload", "CSV / Excel upload"):
-    uploaded_streaming = st.sidebar.file_uploader(
-        "Upload Streaming File",
-        type=UPLOAD_TYPES,
-        key="streaming_upload",
-        help="A CSV or Excel file with a timestamp and actual_streams column. expected_baseline_streams is optional.",
-    )
-    with st.sidebar.expander("File format example"):
-        st.code(
-            """timestamp,actual_streams,expected_baseline_streams
-2026-06-17 00:00:00,2400,2300
-2026-06-17 01:00:00,2100,2200
-2026-06-17 02:00:00,1900,2100""",
-            language="csv",
-        )
-
-mode_suffix = "demo" if demo_mode else "live"
-manual_expected_streams = manual_actual_streams = 0
-if data_mode in ("Manual demo inputs", "Manual entry"):
-    manual_expected_streams = st.sidebar.number_input(
-        "Manual Expected Streams",
-        min_value=0,
-        value=65000 if demo_mode else 0,
-        step=1000,
-        key=f"manual_expected_{mode_suffix}",
-        help="What streams would have been without the social post.",
-    )
-    manual_actual_streams = st.sidebar.number_input(
-        "Manual Actual Streams",
-        min_value=0,
-        value=148000 if demo_mode else 0,
-        step=1000,
-        key=f"manual_actual_{mode_suffix}",
-        help="What streams happened after the social post.",
-    )
-
-manual_social_reach = st.sidebar.number_input(
-    "Social Reach / Views",
-    min_value=0,
-    value=850000 if demo_mode else 0,
-    step=10000,
-    key=f"social_reach_{mode_suffix}",
-    help="Views or reach of the organic social post. Used for revenue per 1K social views.",
-)
-manual_engagement_rate = st.sidebar.slider(
-    "Engagement Rate (%)",
-    min_value=0.0,
-    max_value=25.0,
-    value=5.5 if demo_mode else 0.0,
-    step=0.1,
-    key=f"engagement_{mode_suffix}",
-    help="Engagement rate of the organic social post, if known.",
-)
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("Paid Media Data")
-
-paid_files = []
-paid_default_currency = "USD"
-if demo_mode:
-    st.sidebar.caption("Demo mode is on: synthetic paid media is shown. Uploaded files are ignored until Demo mode is turned off.")
-else:
-    paid_files = st.sidebar.file_uploader(
-        "Upload Paid Media Reports",
-        type=UPLOAD_TYPES,
-        accept_multiple_files=True,
-        key="paid_uploads",
-        help="Exports from Meta, TikTok, Google Ads / YouTube, Snapchat, WAVO or similar. CSV or Excel.",
-    )
-    paid_default_currency = st.sidebar.selectbox(
-        "Currency if a file does not say",
-        ["USD", "EUR", "GBP", "CAD", "AUD", "JPY", "MXN", "BRL"],
-        help="Used only when a file has no currency column or currency in the spend heading.",
-    )
-sidebar_campaign_link = st.sidebar.container()
-
-inputs = render_commerce_sidebar(
-    demo_mode=demo_mode,
-    post_timestamp=post_timestamp,
-    social_reach=float(manual_social_reach),
-)
+for line in extra_posts_text.splitlines():
+    if not line.strip():
+        continue
+    date_text, _, label = line.partition(",")
+    parsed = pd.to_datetime(date_text.strip(), errors="coerce")
+    if pd.notna(parsed):
+        organic_posts.append((parsed.normalize(), label.strip() or "Organic post"))
 
 st.sidebar.markdown("---")
 with st.sidebar.expander("Advanced / Demo", expanded=demo_mode):
     st.toggle(
-        "Demo mode (simulated data)",
+        "Demo mode (synthetic data)",
         key="lollie_demo_mode",
-        help="Shows clearly labeled simulated streaming, paid media and commerce data for training. "
+        help="Shows clearly labelled synthetic advertising and streaming data so you can see how the dashboard works. "
         "It is never mixed with real data.",
     )
-    st.caption("Demo mode is for training only. Turn it off to work with real data.")
-    artist_tier = st.selectbox("Artist Tier", list(ARTIST_TIER_MULTIPLIER), key="adv_tier",
-                               help="Used only to size the simulated streaming baseline in Demo mode.")
-    campaign_intensity = st.slider(
-        "Campaign Intensity Score", min_value=1, max_value=10, value=6, key="adv_intensity",
-        help="Mock score for how strong the social push is. Used only by the Demo simulation.",
+    st.caption("Demo mode is for practice only. Turn it off to work with your own files.")
+    gap_days = st.slider("Leave out days just before launch", 0, 7, 0, help="Skips a ramp-up period before the campaign starts.")
+    min_baseline_days = st.slider("Minimum baseline days with data", 3, 21, 7)
+    low_paid_pct = st.slider(
+        "Count a country as low paid below (% of spend)", 0, 10, 2,
+        help="Countries below this share of spend are listed as 'Reference only'.",
     )
-    st.markdown("**Goal status thresholds**")
-    ahead_pct = st.slider("Ahead of goal at (% of goal)", 100, 150, 110, 5, key="adv_ahead")
-    on_track_pct = st.slider("On track at (% of goal)", 50, 100, 90, 5, key="adv_on_track")
-thresholds = Thresholds(ahead=ahead_pct / 100, on_track=on_track_pct / 100)
+    show_trend = st.checkbox("Show 7-day trend line", True)
 
-# -----------------------------
-# PAGE SKELETON (sections fill in below)
-# -----------------------------
-
-render_section_title("Campaign Intelligence Dashboard")
-banner_box = st.container()
-box_a = st.container()
-box_b = st.container()
-box_c = st.container()
-box_d = st.container()
-box_e = st.container()
-box_f = st.container()
-box_recap = st.container()
-box_help = st.container()
-
-flags: list[tuple[str, str]] = []
-
-if demo_mode:
-    with banner_box:
-        st.warning(
-            "**DEMO MODE.** Everything below is simulated for training and is not real campaign data. "
-            "Turn off Demo mode in the sidebar (Advanced / Demo) to see only your own data."
-        )
-
-# -----------------------------
-# PAID MEDIA DATA (section B import)
-# -----------------------------
-
-with box_b:
-    st.markdown("---")
-    render_section_title("B · Paid Media Performance")
-    paid_import_box = st.container()
-
-if demo_mode:
-    demo_result = synthetic_paid_media(pd.Timestamp(post_timestamp))
-    paid = PaidData(frame=demo_result.frame, issues=[], results=[demo_result], is_demo=True)
-elif paid_files:
-    paid = ingest_uploaded_files(list(paid_files), paid_default_currency, paid_import_box)
-else:
-    paid = PaidData()
-
-paid_frame = paid.frame
-paid_view = pd.DataFrame()
-paid_currency = "USD"
-if not paid_frame.empty:
-    paid_view = link_campaigns(paid_frame, artist_name, sidebar_campaign_link)
-
-# -----------------------------
-# STREAMING DATA (section C import)
-# -----------------------------
-
-with box_c:
-    st.markdown("---")
-    render_section_title("C · Streaming Impact Analysis")
-    stream_import_box = st.container()
-
-stream_df = None
-granularity = "intraday"
-summary = None
-stream_source_caption = ""
-paid_estimated_note = ""
-manual_only = False
-extra_posts: list[tuple[datetime, str]] = []
-second_post_timestamp = None
-
-if multi_post:
-    second_post_timestamp = post_timestamp + timedelta(hours=second_post_delay)
-    extra_posts.append((second_post_timestamp, "Second Post"))
-for line in extra_posts_text.splitlines():
-    if not line.strip():
-        continue
-    stamp, _, label = line.partition(",")
-    parsed = pd.to_datetime(stamp.strip(), errors="coerce")
-    if pd.isna(parsed):
-        flags.append(("warning", f"Could not read the post time '{stamp.strip()}'. Use a format like 2026-10-21 18:00."))
-        continue
-    extra_posts.append((parsed.to_pydatetime(), label.strip() or "Organic post"))
-
-if demo_mode and data_mode == "Auto simulation" or (demo_mode and data_mode == "CSV upload" and uploaded_streaming is None):
-    stream_df = simulate_baseline(
-        post_timestamp,
-        analysis_days,
-        tier_multiplier=ARTIST_TIER_MULTIPLIER[artist_tier],
-        market_multiplier=MARKET_MULTIPLIER[primary_market],
-        dsp_multiplier=DSP_MULTIPLIER[dsp_focus],
-    )
-    stream_df = apply_social_lift(
-        stream_df,
-        post_timestamp,
-        impact_window_hours,
-        campaign_intensity=campaign_intensity,
-        platform_multiplier=PLATFORM_MULTIPLIER[platform],
-        post_type_multiplier=POST_TYPE_MULTIPLIER[post_type],
-    )
-    if multi_post:
-        stream_df = apply_social_lift(
-            stream_df,
-            second_post_timestamp,
-            impact_window_hours,
-            campaign_intensity=campaign_intensity,
-            platform_multiplier=PLATFORM_MULTIPLIER[platform],
-            post_type_multiplier=POST_TYPE_MULTIPLIER[post_type],
-            strength_multiplier=0.65,
-        )
-    stream_source_caption = "Auto simulation mode active: values are generated from the model assumptions (demo data)."
-    if data_mode == "CSV upload":
-        stream_source_caption = "CSV upload mode selected, but no file has been uploaded yet. Showing simulated data."
-elif data_mode in ("Manual demo inputs", "Manual entry"):
-    manual_only = True
-    summary = manual_summary(manual_expected_streams, manual_actual_streams)
-    stream_source_caption = (
-        f"Manual entry mode active: expected and actual totals were typed in. Reach/views {manual_social_reach:,.0f}"
-        f" with {manual_engagement_rate:.1f}% engagement."
-    )
-elif uploaded_streaming is not None:
-    prep = render_streaming_import(
-        uploaded_streaming,
-        stream_import_box,
-        post_timestamp=post_timestamp,
-        impact_window_hours=impact_window_hours,
-    )
-    if prep is not None:
-        stream_df = prep.frame
-        granularity = prep.granularity
-        for note in prep.notes:
-            flags.append(("info", note))
-        stream_source_caption = "File upload mode active: the dashboard is using your uploaded streaming data."
-
-if stream_df is not None and not manual_only:
-    mask = impact_window_mask(stream_df["timestamp"], post_timestamp, impact_window_hours, granularity)
-    if mask.any():
-        summary = summarize_impact(stream_df, mask)
-    else:
-        flags.append(
-            (
-                "warning",
-                "No streaming rows fall inside the impact window. Check the post date and hour against the streaming data dates.",
-            )
-        )
-    stream_mask = mask
-else:
-    stream_mask = None
-
-social_lift_streams = summary.lift if summary else 0.0
-
-# -----------------------------
-# COMMERCE MODEL
-# -----------------------------
-
-commerce_model = build_commerce_model(inputs.rows, float(manual_social_reach), social_lift_streams) if inputs.enabled else None
-commerce_has_data = bool(commerce_model) and not commerce_model.is_empty and (
-    commerce_model.gross_revenue > 0 or commerce_model.units > 0
+settings = AnalysisSettings(
+    baseline_days=baseline_days, post_days=post_days, gap_days=gap_days, min_baseline_days=min_baseline_days
 )
 
 # -----------------------------
-# SECTION B: PAID MEDIA PERFORMANCE
+# LOAD DATA
 # -----------------------------
 
-as_of = pd.Timestamp.today().normalize()
-kpis: dict = {}
-market_view = pd.DataFrame()
-best: dict = {}
-paid_daily = pd.DataFrame()
-paid_flights = pd.DataFrame()
+import_area = st.container()
 
-with box_b:
-    if paid.is_demo:
-        st.caption("Synthetic demo paid media (Demo mode).")
-    show_issues(paid.issues)
+if demo_mode:
+    demo_paid, demo_streams, demo_issues = _demo_data()
+    paid = PaidData(frame=demo_paid, issues=[], is_demo=True)
+    streams = StreamData(frame=demo_streams, issues=[], is_demo=True)
+    paid_issues = stream_issues = []
+else:
+    paid = ingest_uploaded_files(paid_files, paid_default_currency, import_area) if paid_files else PaidData()
+    streams = ingest_stream_files(stream_files, import_area) if stream_files else StreamData()
+    paid_issues, stream_issues = paid.issues, streams.issues
 
-    if paid_view.empty:
-        if paid_files and not paid_frame.empty:
-            st.info("No paid campaigns are linked to this release. Pick campaigns in the sidebar under Paid Media Data.")
-        elif paid_files:
-            st.warning("The uploaded paid media files had no usable rows yet. Check the import settings above.")
-        else:
-            st.info(
-                "No paid media data loaded yet. Upload exports from Meta, TikTok, Google Ads / YouTube, Snapchat or WAVO "
-                "in the sidebar under Paid Media Data. Organic streaming and commerce analysis below still work without it."
-            )
-    else:
-        paid_currency = pick_currency(paid_view)
-        paid_view = paid_view[paid_view["currency"] == paid_currency].reset_index(drop=True)
-        as_of = as_of_default(paid_view)
-        st.caption(
-            f"Showing {paid_view['campaign_name'].nunique()} linked campaign(s) in {paid_currency}, "
-            f"data through {as_of:%B %d, %Y}. Budget is counted once per campaign and market."
-        )
-        kpis = render_kpis(paid_view, paid_currency, as_of)
-        st.markdown("#### Results")
-        render_results(paid_view, paid_currency)
-        st.markdown("#### Performance by Market")
-        market_view = render_market_table(paid_view, as_of, thresholds)
-        paid_daily = daily_series(paid_view)
-        paid_flights = flights(paid_view)
-        if paid_view["source_file"].nunique() > 1:
-            st.caption("Sources: " + ", ".join(sorted(paid_view["source_file"].dropna().unique())))
-        if paid_daily.empty:
-            flags.append(("warning", "The paid media files have no usable dates, so spend cannot be placed on the streaming timeline."))
-        else:
-            stream_stamps = stream_df["timestamp"] if stream_df is not None else None
-            for note in overlap_report(paid_daily, stream_stamps):
-                flags.append(("warning" if "do not overlap" in note or "missing" in note else "info", note))
+if demo_mode:
+    st.warning(f"**DEMO MODE.** {DEMO_LABEL} Turn off Demo mode in the sidebar (Advanced / Demo) to use only your own data.")
 
-# -----------------------------
-# SECTION C: STREAMING IMPACT ANALYSIS
-# -----------------------------
+paid_frame, stream_frame = paid.frame, streams.frame
 
-with box_c:
-    if summary is None and stream_df is None and not manual_only:
-        st.info(
-            "No streaming data loaded yet. Upload a CSV or Excel file in the sidebar (Streaming Data), or switch to "
-            "Manual entry to type in expected and actual totals."
-        )
-    elif summary is not None:
-        unit_noun = "Daily" if granularity == "daily" else "Hourly"
-        col1, col2, col3, col4 = st.columns(4)
-        if manual_only:
-            col1.metric(f"{unit_noun} Baseline Rate", "n/a")
-        else:
-            col1.metric(f"{unit_noun} Baseline Rate", f"{summary.baseline_rate:,.0f}")
-        col2.metric(f"Actual Streams ({impact_window_hours}h)", f"{summary.actual:,.0f}")
-        col3.metric(f"Expected Streams ({impact_window_hours}h)", f"{summary.expected:,.0f}")
-        col4.metric(
-            "Estimated Social Lift",
-            f"{summary.lift:,.0f}",
-            f"{summary.lift_percent:,.1f}%" if summary.lift_percent is not None else None,
-        )
-        st.caption(
-            "Estimated Social Lift is an observational, modeled estimate (actual streams minus an expected baseline). "
-            "It does not prove that the post or any advertising caused the difference."
-        )
-        if granularity == "daily":
-            st.caption("This file has one row per day, so the impact window is measured in whole days starting on the post date.")
-
-        st.markdown("### Impact Window Summary")
-        st.plotly_chart(charts.summary_bar_chart(summary.expected, summary.actual, summary.lift), width="stretch")
-        if stream_source_caption:
-            st.caption(stream_source_caption)
-
-        if paid_daily is not None and not paid_daily.empty and stream_df is not None and stream_mask is not None:
-            window_days = max(int(-(-impact_window_hours // 24)), 1)
-            post_day = pd.Timestamp(post_timestamp).normalize()
-            in_window = paid_daily[(paid_daily["date"] >= post_day) & (paid_daily["date"] < post_day + pd.Timedelta(days=window_days))]
-            st.markdown("#### Paid media during the impact window")
-            if in_window.empty:
-                st.caption("No paid media delivery is recorded in this impact window.")
-            else:
-                w1, w2, w3 = st.columns(3)
-                w1.metric("Paid spend in window", money(in_window["spend"].sum(min_count=1), paid_currency))
-                w2.metric("Paid impressions in window", number(in_window["impressions"].sum(min_count=1)))
-                w3.metric("Days with paid delivery", f"{len(in_window)} of {window_days}")
-
-        if stream_df is not None and not manual_only:
-            overlay_cols = st.columns(3)
-            show_paid_overlay = overlay_cols[0].checkbox(
-                "Show paid flights and daily spend", value=True, disabled=paid_daily.empty, key="show_paid_overlay"
-            )
-            show_posts = overlay_cols[1].checkbox("Show organic post markers", value=True, key="show_posts")
-            overlay_cols[2].caption("Commerce overlay is controlled in the sidebar.")
-
-            commerce_overlay = None
-            if inputs.enabled and inputs.show_overlay and commerce_has_data:
-                commerce_overlay = build_commerce_overlay(
-                    commerce_model,
-                    inputs.overlay_metric,
-                    post_timestamp,
-                    inputs.overlay_window_days,
-                    stream_df["timestamp"].min(),
-                    allow_projection=inputs.is_estimate,
-                )
-                if commerce_overlay.is_empty:
-                    flags.append(
-                        (
-                            "info",
-                            "No dated sales fall in the commerce overlay window, so no commerce line is drawn on the streaming chart.",
-                        )
-                    )
-
-            impact_end = post_timestamp + timedelta(hours=impact_window_hours)
-            figure = charts.streaming_chart(
-                df=stream_df,
-                impact_mask=stream_mask,
-                granularity=granularity,
-                post_timestamp=post_timestamp,
-                impact_end=impact_end,
-                impact_window_hours=impact_window_hours,
-                song_title=song_title,
-                extra_posts=extra_posts if show_posts else [],
-                commerce=commerce_overlay,
-                show_commerce_baseline=inputs.show_baseline,
-                commerce_baseline_percent=inputs.baseline_percent,
-                paid_daily=paid_daily if show_paid_overlay else None,
-                paid_flights=paid_flights if show_paid_overlay else None,
-                paid_currency=paid_currency,
-            )
-            st.plotly_chart(figure, width="stretch")
-            st.caption(
-                f"{granularity_label(granularity)} are shown at the detail the file provides; daily data is never turned into hourly data. "
-                "The shaded lift area and the baseline are modeled, observational estimates."
-            )
-        elif manual_only:
-            st.info("Manual entry has totals only, so there is no timeline chart. Upload hourly or daily data to see the streaming trend with paid and commerce overlays.")
-
-# -----------------------------
-# SECTION D: AUDIENCE & CREATIVE PERFORMANCE
-# -----------------------------
-
-with box_d:
-    st.markdown("---")
-    render_section_title("D · Audience & Creative Performance")
-    if paid_view.empty:
-        st.info("Load paid media data (with ad set / ad group and ad names) to compare audiences and creatives.")
-    else:
-        best = render_audience_creative(paid_view, paid_currency)
-
-# -----------------------------
-# SECTION E: COMMERCE REVENUE
-# -----------------------------
-
-with box_e:
-    st.markdown("---")
-    render_section_title("E · Commerce Revenue")
-    if not inputs.enabled:
-        st.info("Commerce revenue tracking is currently off. Enable it in the sidebar to track merch, physical product, and other campaign-related sales.")
-    elif not commerce_has_data:
-        for message in inputs.messages:
-            st.warning(message)
-        st.info(
-            "No commerce data yet. Upload a sales file or type dated sales in the sidebar under Commerce / Product Revenue."
-        )
-    else:
-        st.markdown("### Commerce Revenue Attribution")
-        revenue_col1, revenue_col2, revenue_col3, revenue_col4 = st.columns(4)
-        revenue_col1.metric("Attributed Product Revenue", f"${commerce_model.gross_revenue:,.0f}")
-        revenue_col2.metric("Estimated Net Revenue", f"${commerce_model.net_revenue:,.0f}")
-        revenue_col3.metric("Attributed Units Sold", f"{commerce_model.units:,.0f}")
-        revenue_col4.metric(
-            "Revenue per 1K Social Views",
-            f"${commerce_model.revenue_per_1k_social_views:,.2f}" if manual_social_reach > 0 else "n/a",
-            help="Needs social reach / views in the sidebar." if manual_social_reach <= 0 else None,
-        )
-
-        st.plotly_chart(charts.commerce_bar_chart(commerce_model.by_product), width="stretch")
-
-        money_columns = [
-            "Average Selling Price",
-            "Unit Cost / COGS",
-            "Gross Revenue",
-            "Total COGS",
-            "Fees / Discounts",
-            "Estimated Net Revenue",
-        ]
-        display_product_df = commerce_model.by_product.copy()
-        for column in money_columns:
-            display_product_df[column] = display_product_df[column].map(lambda value: f"${value:,.2f}")
-        display_product_df["Estimated Margin (%)"] = display_product_df["Estimated Margin (%)"].map(lambda value: f"{value:,.1f}%")
-        st.dataframe(display_product_df, width="stretch", hide_index=True)
-
-        st.markdown("#### Dated Product Sales Detail")
-        display_detail_df = commerce_model.detail.copy()
-        display_detail_df["Sale Date"] = display_detail_df["Sale Date"].dt.strftime("%Y-%m-%d")
-        for column in money_columns:
-            display_detail_df[column] = display_detail_df[column].map(lambda value: f"${value:,.2f}")
-        display_detail_df["Estimated Margin (%)"] = display_detail_df["Estimated Margin (%)"].map(lambda value: f"{value:,.1f}%")
-        st.dataframe(display_detail_df, width="stretch", hide_index=True)
-
-        if commerce_model.revenue_per_lift_stream > 0:
-            lift_text = f" Revenue per lift stream is approximately ${commerce_model.revenue_per_lift_stream:,.2f}."
-        else:
-            lift_text = " Revenue per lift stream is not available without a positive streaming lift."
-        source_text = "Commerce estimate (demo)" if inputs.is_estimate else "Commerce data loaded"
-        commerce_note = (
-            f"{source_text}: ${commerce_model.gross_revenue:,.0f} in attributed gross product revenue and "
-            f"${commerce_model.net_revenue:,.0f} in estimated net revenue.{lift_text} "
-            "Revenue is shown next to the streaming window for context and is not proof the post or ads caused the sales."
-        )
-        st.caption(commerce_note.replace("$", "\\$"))
-
-# -----------------------------
-# SECTION F: AD CREDITS & FUNDING
-# -----------------------------
-
-with box_f:
-    st.markdown("---")
-    render_section_title("F · Ad Credits & Funding")
-    render_credits_compact(demo_mode, artist=artist_name, campaign=opus_campaign_id)
-
-# -----------------------------
-# SECTION A: CAMPAIGN OVERVIEW (filled last, shown first)
-# -----------------------------
-
-with box_a:
-    render_section_title("A · Campaign Overview")
-    st.subheader(f"{artist_name} — {song_title}")
-    st.caption(
-        f"Campaign: {opus_campaign_id} | ISRC: {isrc} | Release phase: {release_phase} | "
-        f"Platform: {platform} | Market: {primary_market} | DSP focus: {dsp_focus}"
-    )
-    st.info(
-        f"""
-        **Social post time:** {post_timestamp.strftime('%B %d, %Y at %I:%M %p')}
-
-        The post hour is the clock hour when the post went live.
-        For example, hour **23** means **11:00 PM** on the selected post date.
-        """
-    )
-    st.caption("Paid advertising and organic social  →  streaming performance  →  commerce revenue")
-
-    o1, o2, o3, o4 = st.columns(4)
-    o1.metric("Paid Spend", money(kpis.get("spend"), paid_currency) if kpis else "n/a")
-    o2.metric("Paid Impressions", number(kpis.get("impressions")) if kpis else "n/a")
-    o3.metric(
-        f"Streaming Lift ({impact_window_hours}h)",
-        f"{summary.lift:,.0f}" if summary else "n/a",
-        f"{summary.lift_percent:,.1f}%" if summary and summary.lift_percent is not None else None,
-    )
-    o4.metric("Product Revenue", f"${commerce_model.gross_revenue:,.0f}" if commerce_has_data else "n/a")
-
-    if paid_view.empty and summary is None and not commerce_has_data and not demo_mode:
-        st.info(
-            "Welcome. Nothing is loaded yet. Use the sidebar to upload streaming data, paid media reports and sales, "
-            "or switch on Demo mode (Advanced / Demo, at the bottom of the sidebar) to explore with simulated data."
-        )
-
-    if market_view is not None and not paid_view.empty:
-        if primary_market != "Global" and primary_market not in set(paid_view["market"].astype(str).str.upper()):
-            flags.append(
-                (
-                    "info",
-                    f"The sidebar primary market is {primary_market}; paid media markets are "
-                    f"{', '.join(sorted(paid_view['market'].astype(str).unique())[:8])}. Check that streaming and paid media cover the same markets.",
-                )
-            )
-    if flags:
-        with st.expander(f"Data checks ({len(flags)})", expanded=any(level == "warning" for level, _ in flags)):
-            for level, message in flags:
-                (st.warning if level == "warning" else st.caption)(message if level == "warning" else f"Note: {message}")
-
-# -----------------------------
-# CAMPAIGN RECAP (optional)
-# -----------------------------
-
-with box_recap:
-    st.markdown("---")
-    with st.expander("Campaign recap (optional)", expanded=False):
-        if paid_view.empty:
-            st.caption("Load paid media data to generate a recap.")
-        else:
-            streaming_payload = None
-            if summary is not None:
-                streaming_payload = {
-                    "window": f"{impact_window_hours}h",
-                    "actual": summary.actual,
-                    "expected": summary.expected,
-                    "lift_percent": summary.lift_percent,
-                }
-            recap_table = campaign_market_table(paid_view, as_of, thresholds)
-            recap_text = build_recap(
-                artist=artist_name,
-                release=song_title,
-                campaign_id=opus_campaign_id,
-                kpis=kpis,
-                currency=paid_currency,
-                platforms=sorted(paid_view["platform"].unique().tolist()),
-                pacing=kpis.get("pacing"),
-                market_table=recap_table,
-                as_of=as_of,
-                best_audience_cost=best.get("audience_cost"),
-                best_audience_engaging=best.get("audience_engaging"),
-                best_creative_cost=best.get("creative_cost"),
-                streaming=streaming_payload,
-            )
-            st.text_area("Recap (copy or download)", recap_text, height=420)
-            st.download_button("Download recap (.txt)", recap_text, file_name="lollie_campaign_recap.txt")
-            st.caption("Built only from the numbers loaded above. It does not explain why results happened.")
-
-# -----------------------------
-# EXPLANATION
-# -----------------------------
-
-with box_help:
+if paid.is_empty and streams.is_empty:
+    render_section_title("Paid Media & Streaming Intelligence")
     st.markdown(
         """
-### How to read this dashboard
+**Welcome.** Lollie answers one question: *when we run paid media campaigns, what happens to the streaming performance
+of the music we are promoting?*
 
-**One flow, one page**
-Paid advertising and organic social posts feed streaming performance, which sits next to commerce revenue. Sections A to F follow that flow from top to bottom.
+Nothing is loaded yet. To get started:
 
-**Data Source Mode**
-The streaming section reads real data you provide:
+1. In the sidebar, upload a **paid media report** (WAVO or another advertising export, CSV or Excel).
+2. Upload a **streaming report** (Opus or another approved export, CSV or Excel).
+3. Choose the artist, campaign and song in **Campaign Overview** below. If the report lists a playlist, choose the tracks on it.
 
-* **CSV / Excel upload** reads hourly or daily streaming data and lets you map the timestamp, actual streams, and expected baseline columns.
-* **Manual entry** lets you type expected and actual totals for the impact window so the KPIs, lift estimate, and summary chart update.
-* **Demo mode** (Advanced / Demo in the sidebar) adds clearly labeled simulated data for training. It is never mixed with real data.
+Want to look around first? Open **Advanced / Demo** at the bottom of the sidebar and switch on Demo mode. It uses clearly
+labelled synthetic data. Practice files you can upload are in the `sample_data` folder.
+"""
+    )
+    st.stop()
 
-**Expected Baseline Streams**
-The estimate of how many streams the track would have received without the selected social, video, or campaign event.
+# -----------------------------
+# A · CAMPAIGN OVERVIEW
+# -----------------------------
 
-**Actual Streams**
-The stream count after the selected social/video event goes live.
+render_section_title("A · Campaign Overview")
 
-**Estimated Social Lift**
-The difference between actual streams and expected baseline streams during the selected impact window.
+artists = sorted(
+    {a for a in paid_frame.get("artist", pd.Series(dtype=object)).dropna().astype(str)}
+    | {a for a in stream_frame.get("artist", pd.Series(dtype=object)).dropna().astype(str) if a}
+)
+filters_top = st.columns(4)
+if artists:
+    artist_choice = filters_top[0].selectbox("Artist", artists if len(artists) == 1 else ["All artists"] + artists, key="f_artist")
+else:
+    artist_choice = filters_top[0].text_input("Artist (not in files)", "", key="f_artist_text") or "All artists"
+artist_filter = None if artist_choice == "All artists" else artist_choice
 
-**Formula**
-Estimated Social Lift = Actual Streams - Expected Baseline Streams
+paid_a = paid_frame
+if not paid_a.empty and artist_filter:
+    paid_a = paid_a[(paid_a["artist"] == artist_filter) | paid_a["artist"].isna()]
+streams_a = stream_frame
+if not streams_a.empty and artist_filter:
+    streams_a = streams_a[(streams_a["artist"] == artist_filter) | (streams_a["artist"] == "")]
 
-This is an observational, modeled comparison. It does not prove that a post or an ad campaign caused the change.
+campaign_choice = None
+campaign_rows = paid_a.iloc[0:0]
+if not paid_a.empty:
+    campaigns = sorted(paid_a["campaign_name"].dropna().unique().tolist())
+    campaign_choice = filters_top[1].selectbox("Campaign", campaigns, key="f_campaign")
+    campaign_rows = paid_a[paid_a["campaign_name"] == campaign_choice]
+else:
+    filters_top[1].selectbox("Campaign", ["No paid media report loaded"], disabled=True, key="f_campaign_none")
 
-**Impact Window**
-The selected measurement period after the post or video event. A 24-hour window is useful for fast TikTok/Reels/Shorts spikes. A 72-hour or 168-hour window is better for slower campaign effects, catalog activity, and YouTube content. Daily files are measured in whole days.
+platforms = sorted(campaign_rows["platform"].dropna().unique().tolist()) if not campaign_rows.empty else []
+platform_choice = filters_top[2].multiselect(
+    "Advertising platform", platforms, default=platforms, key=f"f_platform_{campaign_choice}", disabled=not platforms
+)
 
-**Paid Media Performance**
-Spend, impressions, views, engagements, clicks, CPM, CPC and CTR come straight from your platform exports. Results (landing page views, video views, clicks, engagements) are never added together across types. Budget pacing compares spend so far with an even spend across each flight. Forecast attainment projects results to the end of the flight and compares them with the goal.
+paid_market_labels = (
+    sorted(campaign_rows["market"].dropna().unique().tolist()) if not campaign_rows.empty else []
+)
+paid_label_to_code = {}
+if not campaign_rows.empty:
+    for label, code in campaign_rows[["market", "market_code"]].drop_duplicates().itertuples(index=False):
+        paid_label_to_code[label] = code
+stream_label_to_code = {}
+if not streams_a.empty:
+    for label, code in streams_a[["market", "market_code"]].drop_duplicates().itertuples(index=False):
+        if code != ALL_MARKETS_CODE:
+            stream_label_to_code[label] = code
+all_label_to_code = {**stream_label_to_code, **paid_label_to_code}
+market_options = sorted(all_label_to_code)
+default_markets = [m for m in paid_market_labels if paid_label_to_code.get(m) not in (None, ALL_MARKETS_CODE)]
+if not default_markets:
+    default_markets = [m for m in market_options]
+market_choice = filters_top[3].multiselect(
+    "Country / market",
+    market_options,
+    default=[m for m in default_markets if m in market_options],
+    key=f"f_market_{campaign_choice}",
+    help="Streaming is totalled for these countries. By default these are the countries the campaign advertised in.",
+)
 
-**Audience & Creative Performance**
-Audiences and creatives are compared only on compatible numbers: cost per result within one result type, and engagement rate within one platform.
+filters_bottom = st.columns([1, 2])
+dsps = sorted({d for d in streams_a["dsp"].unique() if d not in ("All DSPs",)}) if not streams_a.empty else []
+dsp_choice = filters_bottom[0].selectbox("DSP", ["All DSPs"] + dsps, key="f_dsp", disabled=streams_a.empty)
 
-**Commerce Revenue Attribution**
-Product revenue that may be associated with the social and streaming impact window. Product categories include vinyl, CDs, cassettes, deluxe editions, box sets, signed products, apparel, accessories, posters, merch bundles, digital downloads, fan memberships, and ticket or VIP upsells. Commerce can come from an uploaded file, dated sales you type in, or (Demo mode only) an auto estimate.
+paid_campaign = campaign_rows
+if not paid_campaign.empty:
+    if platform_choice:
+        paid_campaign = paid_campaign[paid_campaign["platform"].isin(platform_choice)]
+    chosen_paid_rows = paid_campaign[
+        paid_campaign["market"].isin(market_choice) | (paid_campaign["market_code"] == ALL_MARKETS_CODE)
+    ]
+    paid_campaign = chosen_paid_rows
 
-**Commerce Overlay**
-When enabled, the chart can overlay attributed product revenue or units on the streaming trend using a separate right-side axis, because streams and revenue are different measurements.
+if not paid_campaign.empty:
+    currency = pick_currency(paid_campaign)
+    paid_campaign = paid_campaign[paid_campaign["currency"] == currency].reset_index(drop=True)
+else:
+    currency = paid_default_currency
 
-**Ad Credits & Funding**
-A compact summary of partner-funded allocations, billing credits and prepaid funds. Nothing is redeemed or pulled from ad accounts automatically.
+dates = campaign_dates(paid_campaign)
+manual_dates = False
+if not dates.known:
+    manual_dates = True
+    with filters_bottom[1]:
+        st.caption("No campaign dates in the paid media data. Enter them to analyse streaming.")
+        date_cols = st.columns(2)
+        manual_start = date_cols[0].date_input("Campaign start", value=None, key="manual_start")
+        manual_end = date_cols[1].date_input("Campaign end", value=None, key="manual_end")
+    if manual_start and manual_end:
+        dates = CampaignDates(
+            pd.Timestamp(manual_start), pd.Timestamp(manual_end), False, "Campaign dates were entered by hand."
+        )
 
-**Important note**
-Lollie works with the data you give it. Demo mode uses simulated data only. It is designed to show the logic and workflow of a music analytics tool, not to represent real Opus, DSP, advertising platform, D2C, retail, financial, or confidential label data unless connected to approved internal systems.
+# Promoted song / playlist
+scope_box = st.container()
+stream_tracks = tracks_from_stream_frame(streams_a)
+scope, scope_notes = choose_campaign_scope(
+    stream_tracks, campaign_rows, track_file, key=f"scope_{campaign_choice}", container=scope_box
+)
+matched, coverage = match_streams(streams_a, scope.tracks) if not scope.tracks.empty else (streams_a.iloc[0:0], pd.DataFrame())
+analysis_ready = not matched.empty and dates.known
+if scope.mode != "single" and not scope.tracks.empty and not coverage.empty:
+    with st.expander("Which tracks were found in the streaming data"):
+        st.dataframe(coverage, width="stretch", hide_index=True)
+        missing = coverage[coverage["Matched by"] == "Not found in streaming data"]
+        if not missing.empty:
+            st.warning(
+                f"{len(missing)} listed track(s) were not found in the streaming data and are not included: "
+                + ", ".join(missing["Track"].head(8))
+                + "."
+            )
+        if matched.attrs.get("collapsed_rows"):
+            st.warning(
+                f"{matched.attrs['collapsed_rows']} streaming row(s) described the same track twice (for example with and "
+                "without an ISRC); only the larger was kept so streams are not double counted."
+            )
 
-Conceptualized and designed by Alexander DiFiore, Rhino. Named "lollie" after his two beloved cats, Lily and Ollie.
+if dates.known:
+    tiles = st.columns(5)
+    tiles[0].metric("Campaign start", f"{dates.start:%b %d, %Y}")
+    tiles[1].metric("Campaign end", f"{dates.end:%b %d, %Y}")
+    tiles[2].metric("Length", f"{(dates.end - dates.start).days + 1} days")
+    tiles[3].metric("Promoting", scope.label if not scope.tracks.empty else "Not selected")
+    tiles[4].metric("Countries", len(market_choice) if market_choice else "All")
+    if dates.note:
+        st.caption(dates.note)
+
+chosen_codes = sorted({all_label_to_code[m] for m in market_choice if all_label_to_code.get(m) and all_label_to_code[m] != ALL_MARKETS_CODE})
+streaming_codes = chosen_codes if chosen_codes else None
+
+daily_all = daily_scope_totals(matched, dsp_choice) if not matched.empty else pd.DataFrame()
+
+view_range = None
+if dates.known:
+    base_start, _ = baseline_window(dates.start, settings)
+    default_view = (base_start.date(), (dates.end + pd.Timedelta(days=post_days)).date())
+    picked = st.date_input(
+        "Date range shown",
+        value=default_view,
+        key=f"f_range_{campaign_choice}_{baseline_days}_{post_days}_{dates.start:%Y%m%d}",
+        help="Changes the dates shown in the charts and paid media totals. The analysis windows stay tied to the campaign dates.",
+    )
+    if isinstance(picked, (tuple, list)) and len(picked) == 2:
+        view_range = (pd.Timestamp(picked[0]), pd.Timestamp(picked[1]))
+
+# paid view for section B (date-range filtered)
+paid_view = paid_campaign
+if view_range and not paid_view.empty:
+    in_range = paid_view["date"].isna() | ((paid_view["date"] >= view_range[0]) & (paid_view["date"] <= view_range[1]))
+    paid_view = paid_view[in_range]
+
+# -----------------------------
+# B · PAID MEDIA PERFORMANCE
+# -----------------------------
+
+render_section_title("B · Paid Media Performance")
+if paid.is_empty:
+    st.info("No paid media report loaded. Upload a WAVO or advertising report in the sidebar.")
+    kpis, results_table = {}, pd.DataFrame()
+else:
+    kpis, results_table = render_paid_section(paid_view, currency)
+
+# -----------------------------
+# C · STREAMING INTELLIGENCE
+# -----------------------------
+
+render_section_title("C · Streaming Intelligence")
+analysis = None
+relationship = None
+agg_notes: list[str] = []
+spend_daily = pd.DataFrame()
+if streams.is_empty:
+    st.info("No streaming report loaded. Upload a streaming export in the sidebar to see streams around the campaign.")
+elif scope.tracks.empty:
+    st.info("Choose the promoted song or playlist in Campaign Overview above.")
+elif matched.empty:
+    st.warning("None of the selected tracks were found in the streaming data, so there is nothing to analyse.")
+elif not dates.known:
+    st.info("Enter campaign start and end dates in Campaign Overview to compare streaming before, during and after.")
+else:
+    series, agg_notes = aggregate_daily(daily_all, streaming_codes)
+    if series.empty:
+        st.warning("There is no streaming data for the selected countries and DSP.")
+    else:
+        analysis = analyze_campaign_window(series, dates.start, dates.end, settings)
+        if not paid_campaign.empty:
+            spend_daily = daily_series(paid_campaign)[["date", "spend"]]
+            frame_series = analysis.series.set_index("date")
+            relationship = lag_relationship(
+                spend_series(paid_campaign, dates.start, dates.end), frame_series["actual"], frame_series["expected"]
+            )
+        market_text = ", ".join(market_choice[:4]) + ("…" if len(market_choice) > 4 else "") if market_choice else "all countries"
+        render_streaming_section(
+            analysis,
+            title=f"{scope.label}: actual vs expected streams ({market_text}, {dsp_choice})",
+            spend_daily=spend_daily,
+            currency=currency,
+            organic_posts=organic_posts,
+            impact_days=impact_days,
+            show_trend=show_trend,
+            view_range=view_range,
+            notes=agg_notes,
+            relationship=relationship,
+        )
+        if scope.track_count > 1:
+            render_track_breakdown(matched, scope.tracks, dsp_choice, streaming_codes, dates.start, dates.end, settings)
+        render_source_streams(matched)
+
+source_present = bool(not matched.empty and (matched["scope"] != "total").any())
+
+# -----------------------------
+# D · MARKET COMPARISON
+# -----------------------------
+
+render_section_title("D · Market Comparison")
+market_table = pd.DataFrame()
+rank_note = None
+if paid.is_empty or streams.is_empty or not analysis_ready:
+    st.info("Country comparison needs a paid media report, a streaming report, a selected song or playlist and campaign dates.")
+else:
+    paid_all_markets = campaign_rows
+    if platform_choice:
+        paid_all_markets = paid_all_markets[paid_all_markets["platform"].isin(platform_choice)]
+    paid_all_markets = paid_all_markets[paid_all_markets["currency"] == currency]
+    market_table, market_analyses, market_relations = market_comparison(
+        paid_all_markets, daily_all, dates.start, dates.end, settings, low_paid_share=low_paid_pct / 100
+    )
+    hidden = 0
+    if not market_table.empty:
+        streaming_only = market_table[market_table["Paid activity"] != PAID]
+        keep_low = streaming_only.sort_values("Avg daily streams before", ascending=False).head(8).index
+        drop = streaming_only.index.difference(keep_low)
+        hidden = len(drop)
+        market_table = market_table.drop(index=drop).reset_index(drop=True)
+    rank_note = market_rank_note(market_table)
+    render_market_section(market_table, rank_note, hidden)
+
+# -----------------------------
+# E · CAMPAIGN SUMMARY
+# -----------------------------
+
+render_section_title("E · Campaign Summary")
+if paid.is_empty and streams.is_empty:
+    st.info("The summary appears once data is loaded.")
+else:
+    other_paid = paid_a[paid_a["currency"] == currency] if not paid_a.empty else paid_a
+    overlaps = (
+        overlap_notes(other_paid, campaign_choice, dates.start, dates.end, settings, chosen_codes or None)
+        if (campaign_choice and dates.known and not other_paid.empty)
+        else []
+    )
+    data_notes = [i.message for i in paid_issues + stream_issues + scope_notes if i.level in ("warning", "error")]
+    data_notes += agg_notes
+    if not paid.is_empty and not paid_campaign.empty and paid_campaign["market_code"].isna().any():
+        data_notes.append("Some paid media rows have countries Lollie could not match, so they are left out of country comparisons.")
+    results_lines = results_sentences(results_table, currency) if not results_table.empty else []
+    summary = build_summary(
+        campaign=campaign_choice or "(no paid campaign)",
+        scope_label=scope.label if not scope.tracks.empty else "the selected music",
+        currency=currency,
+        kpis=kpis or {},
+        results_text=results_lines,
+        analysis=analysis,
+        market_table=market_table,
+        rank_note=rank_note,
+        relationship=relationship,
+        overlap_notes=overlaps,
+        data_notes=data_notes,
+        dates_note=dates.note if dates.known else "",
+        source_attributed_present=source_present,
+        membership_verified=scope.membership_verified,
+        multi_track=scope.mode != "single",
+    )
+    if not kpis and analysis is None:
+        st.info("Load a paid media report and a streaming report, then choose a campaign and song, to see the summary.")
+    else:
+        header_bits = [bit for bit in (
+            f"Opus campaign {opus_campaign_id}" if opus_campaign_id.strip() else "",
+            f"Release phase: {release_phase}" if release_phase != "Not specified" else "",
+            f"Playlist reference: {scope.playlist_url}" if scope.playlist_url else "",
+        ) if bit]
+        if header_bits:
+            st.caption(" · ".join(header_bits))
+        markdown = summary.to_markdown(f"{campaign_choice or 'Campaign'} summary")
+        st.markdown(markdown.replace("$", "\\$"))
+        st.download_button("Download summary (text)", markdown, file_name="lollie_campaign_summary.md", key="dl_summary")
+    if not other_paid.empty and other_paid["campaign_name"].nunique() > 1 and not daily_scope_totals(matched).empty:
+        with st.expander("Compare with other campaigns"):
+            render_campaign_comparison(other_paid, daily_scope_totals(matched, dsp_choice), settings, currency)
+    if demo_mode:
+        st.caption(DEMO_LABEL)
+
+with st.expander("Import notes"):
+    notes_shown = False
+    for issues in (paid_issues, stream_issues):
+        if issues:
+            show_issues(issues)
+            notes_shown = True
+    if not notes_shown:
+        st.caption("No import notes.")
+
+with st.expander("How to read this dashboard"):
+    st.markdown(
+        """
+* **Expected** streams come from the days before the campaign (see *How the expected baseline is calculated* under the chart).
+* **Observed streaming change** and **Change versus baseline** compare actual streams with that expected level. They describe what
+  happened; they do not prove the advertising caused it.
+* A **Potential positive relationship** means ad spend and streaming change moved up and down together on the same or following days.
+  It is a pattern to investigate, not a result.
+* Streams credited to a playlist or source are kept separate from total track streams and never added to them.
+* Countries with little or no paid activity are shown for reference only. They are not a validated comparison group.
+* **Demo mode** uses synthetic data only. It is never mixed with real data.
 """
     )
