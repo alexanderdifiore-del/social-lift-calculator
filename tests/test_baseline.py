@@ -34,6 +34,17 @@ def test_flat_streams_show_no_change():
     assert result.baseline.average == pytest.approx(1000)
 
 
+def test_catalog_mode_is_opt_in_for_demo_only():
+    result = analyze_campaign_window(
+        series(days=90),
+        START,
+        END,
+        AnalysisSettings(baseline_days=56, catalog_mode=True),
+    )
+    assert result.method == "Global Catalog baseline"
+    assert result.expected_value == pytest.approx(1000)
+
+
 def test_known_increase_is_measured_exactly():
     s = series()
     s.loc[START:END] *= 1.25

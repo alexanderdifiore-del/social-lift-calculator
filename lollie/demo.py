@@ -2,8 +2,9 @@
 
 Nothing here comes from a real artist, report or company system. The numbers are
 generated with a fixed random seed so the demo and the sample files are the same
-every time. In the demo world some countries are given a modest streaming response
-to the campaigns and others none, purely so the dashboard has something to show.
+every time. In the demo world the catalog has a mild, steady drift and a normal weekday
+pattern. Some countries are given a modest streaming response to the campaigns and others
+none, purely so the dashboard has something to show.
 
 Run ``python -m lollie.demo sample_data`` to write sample CSV / Excel files you can
 upload to practice with.
@@ -44,8 +45,9 @@ WEEKDAY = [0.95, 0.95, 0.97, 1.0, 1.08, 1.1, 1.0]
 C1 = "DEMO | Neon Skyline | Single launch"
 C1_START, C1_END = pd.Timestamp("2026-03-01"), pd.Timestamp("2026-03-21")
 C2 = "DEMO | Summer Playlist push"
-C2_START, C2_END = pd.Timestamp("2026-05-10"), pd.Timestamp("2026-05-30")
-DATA_START, DATA_END = pd.Timestamp("2026-01-15"), pd.Timestamp("2026-06-30")
+C2_START, C2_END = pd.Timestamp("2026-06-14"), pd.Timestamp("2026-07-04")
+DATA_START, DATA_END = pd.Timestamp("2025-10-15"), pd.Timestamp("2026-07-25")
+CATALOG_GROWTH_PER_DAY = 0.0002
 
 # (campaign, platform, market, budget, objective, result type, promoted item, isrc, start, end)
 PLAN = [
@@ -135,7 +137,8 @@ def demo_streams_raw() -> pd.DataFrame:
                         lift += _response(day, C1_START, C1_END, gain)
                     if market in ("United States", "Brazil"):
                         lift += _response(day, C2_START, C2_END, gain * 0.6)
-                    value = level * WEEKDAY[day.day_of_week] * (1 + lift) * rng.lognormal(0, 0.06)
+                    organic = (1 + CATALOG_GROWTH_PER_DAY) ** (day - DATA_START).days
+                    value = level * WEEKDAY[day.day_of_week] * organic * (1 + lift) * rng.lognormal(0, 0.06)
                     rows.append(
                         {
                             "Date": day.strftime("%Y-%m-%d"),
@@ -162,7 +165,7 @@ def demo_track_list_raw() -> pd.DataFrame:
             "Track Title": [t[0] for t in TRACKS],
             "Artist": DEMO_ARTIST,
             "ISRC": [t[1] for t in TRACKS],
-            "Added to playlist": ["2026-05-01"] * len(TRACKS),
+            "Added to playlist": ["2026-06-01"] * len(TRACKS),
             "Removed from playlist": [""] * len(TRACKS),
         }
     )

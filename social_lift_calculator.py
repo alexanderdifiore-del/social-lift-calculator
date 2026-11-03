@@ -29,6 +29,7 @@ from lollie.streams.tracks import (
     tracks_from_stream_frame,
 )
 from lollie.summary import build_summary
+from lollie.valuation import DEFAULT_RATE_USD, estimate_streaming_value
 from lollie.ui.campaign_tracks import choose_campaign_scope
 from lollie.ui.paid_sections import (
     UPLOAD_TYPES,
@@ -103,7 +104,8 @@ track_file = st.sidebar.file_uploader(
 st.sidebar.markdown("---")
 st.sidebar.subheader("Analysis windows")
 baseline_days = st.sidebar.slider(
-    "Baseline length (days before launch)", 7, 56, 28, help="Streams in these days set the expected level."
+    "Baseline length (days before launch)", 7, 56, 56 if demo_mode else 28,
+    help="Streams in these days set the expected level."
 )
 post_days = st.sidebar.slider(
     "After-campaign window (days)", 0, 28, 14, help="Days after the campaign ends that are checked for a lingering change."
@@ -152,7 +154,7 @@ for line in extra_posts_text.splitlines():
         organic_posts.append((parsed.normalize(), label.strip() or "Organic post"))
 
 st.sidebar.markdown("---")
-with st.sidebar.expander("Advanced / Demo", expanded=demo_mode):
+with st.sidebar.expander("Advanced Settings", expanded=demo_mode):
     st.toggle(
         "Demo mode (synthetic data)",
         key="lollie_demo_mode",
@@ -167,9 +169,23 @@ with st.sidebar.expander("Advanced / Demo", expanded=demo_mode):
         help="Countries below this share of spend are listed as 'Reference only'.",
     )
     show_trend = st.checkbox("Show 7-day trend line", True)
+    show_estimate = st.checkbox("Show estimated streaming value", True)
+    value_rate = st.number_input(
+        "Assumed value per Spotify stream (USD)",
+        min_value=0.0,
+        value=DEFAULT_RATE_USD,
+        step=0.0005,
+        format="%.4f",
+        disabled=not show_estimate,
+        help="Spotify has no universal fixed per-stream royalty. This is a planning assumption only.",
+    )
 
 settings = AnalysisSettings(
-    baseline_days=baseline_days, post_days=post_days, gap_days=gap_days, min_baseline_days=min_baseline_days
+    baseline_days=baseline_days,
+    post_days=post_days,
+    gap_days=gap_days,
+    min_baseline_days=min_baseline_days,
+    catalog_mode=demo_mode,
 )
 
 # -----------------------------
@@ -386,6 +402,7 @@ else:
 
 render_section_title("C · Streaming Intelligence")
 analysis = None
+value = None
 relationship = None
 agg_notes: list[str] = []
 spend_daily = pd.DataFrame()
@@ -405,6 +422,13 @@ else:
         st.warning("There is no streaming data for the selected countries and DSP.")
     else:
         analysis = analyze_campaign_window(series, dates.start, dates.end, settings)
+        value = estimate_streaming_value(
+            analysis.observed_change,
+            value_rate,
+            enabled=show_estimate,
+            applies=dsp_choice == "Spotify",
+            reason_if_not_applicable="The estimate is available for Spotify only.",
+        )
         if not paid_campaign.empty:
             spend_daily = daily_series(paid_campaign)[["date", "spend"]]
             frame_series = analysis.series.set_index("date")
@@ -423,6 +447,7 @@ else:
             view_range=view_range,
             notes=agg_notes,
             relationship=relationship,
+            value=value,
         )
         if scope.track_count > 1:
             render_track_breakdown(matched, scope.tracks, dsp_choice, streaming_codes, dates.start, dates.end, settings)

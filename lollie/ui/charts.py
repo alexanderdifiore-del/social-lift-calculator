@@ -45,6 +45,28 @@ def streaming_intelligence_chart(
 
     expected = frame[frame["expected"].notna()]
     if not expected.empty:
+        if analysis.settings.catalog_mode:
+            residual = (expected["actual"] - expected["expected"]).dropna()
+            relative_sigma = (
+                float((residual / expected.loc[residual.index, "expected"]).std())
+                if len(residual) > 2
+                else 0.0
+            )
+            if relative_sigma > 0:
+                upper = expected["expected"] * (1 + 2 * relative_sigma)
+                lower = (expected["expected"] * (1 - 2 * relative_sigma)).clip(lower=0)
+                figure.add_trace(
+                    go.Scatter(
+                        x=pd.concat([expected["date"], expected["date"][::-1]]),
+                        y=pd.concat([upper, lower[::-1]]),
+                        fill="toself",
+                        name="Typical range from history",
+                        fillcolor="rgba(122,135,147,0.16)",
+                        line=dict(width=0),
+                        hoverinfo="skip",
+                    ),
+                    row=1, col=1,
+                )
         figure.add_trace(
             go.Scatter(
                 x=expected["date"], y=expected["expected"], mode="lines", name="Expected baseline streams",

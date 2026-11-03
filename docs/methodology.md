@@ -56,3 +56,7 @@ many days later and reports the strongest match.
 
 The app and summaries use: *Observed streaming change*, *Change versus baseline*, *Streaming activity during campaign*,
 *Potential positive relationship*. They do not say that advertising caused, drove or generated streams.
+
+## Optional Estimated Streaming Value Change
+
+The optional estimate is calculated separately as observed streaming change multiplied by an assumed value per Spotify stream. The default is $0.004 and it is editable in Advanced Settings. It is not used in the expected-streams baseline and is not revenue, royalties, profit or advertising ROI. Spotify has no universal fixed per-stream royalty. Other DSPs show “Not calculated”.

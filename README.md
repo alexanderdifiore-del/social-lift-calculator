@@ -33,7 +33,7 @@ Synthetic practice files are in `sample_data/`:
 | `sample_streaming_daily.csv` or `.xlsx` | 2 · Streaming report |
 | `sample_playlist_track_list.csv` | 3 · Track list (only for the "Summer Playlist push" campaign) |
 
-Or switch on **Demo mode** (sidebar, *Advanced / Demo*) to see the same data without uploading anything. Demo mode is clearly
+Or switch on **Demo mode** (sidebar, *Advanced Settings*) to see the same data without uploading anything. Demo mode is clearly
 labelled and never mixed with real data. Regenerate the files with `python -m lollie.demo sample_data`.
 
 ## Using your own files
@@ -60,7 +60,9 @@ Details: [`docs/data_requirements.md`](docs/data_requirements.md), [`docs/method
 | E · Campaign Summary | Plain factual summary with data limitations, plus comparison with other campaigns |
 
 The original Lollie look (teal branding, white background, simple sidebar, large KPIs, interactive Plotly expected-versus-actual
-chart, impact window and social post markers, artist / track information) is kept.
+chart, impact window and social post markers, artist / track information) is kept. An optional Estimated Streaming Value Change
+uses observed streaming change x an editable assumed Spotify rate (default $0.004); it is separate from the baseline and is not
+revenue, royalties, profit or ad ROI. Radio statistics are not part of Lollie.
 
 ## Project layout
 
