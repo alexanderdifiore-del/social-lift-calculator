@@ -53,7 +53,7 @@ class ScopeAnalysis:
                     "Actual streams": a.during_actual if a else None,
                     "Observed change": a.observed_change if a else None,
                     "Change vs baseline": a.pct_change if a else None,
-                    "Reading": a.reading if a and a.usable else "Not enough history",
+                    "Reading": a.short_reading if a and a.usable else "Not enough history",
                 }
             )
         return pd.DataFrame(rows, columns=["Track", "Expected streams", "Actual streams", "Observed change", "Change vs baseline", "Reading"])

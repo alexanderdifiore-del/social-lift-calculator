@@ -104,7 +104,7 @@ track_file = st.sidebar.file_uploader(
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("Analysis windows")
-WINDOW_AUTO = "Auto (56 days when there is enough history)"
+WINDOW_AUTO = "Auto (56 days preferred)"
 WINDOW_CHOICES = {WINDOW_AUTO: 56, "14 days": 14, "28 days": 28, "56 days": 56, "90 days": 90}
 window_choice = st.sidebar.selectbox(
     "Historical baseline window",
@@ -222,7 +222,7 @@ else:
     paid_issues, stream_issues = paid.issues, streams.issues
 
 if demo_mode:
-    st.warning(f"**DEMO MODE.** {DEMO_LABEL} Turn off Demo mode in the sidebar (Advanced / Demo) to use only your own data.")
+    st.warning(f"**DEMO MODE.** {DEMO_LABEL} Turn off Demo mode in the sidebar (Advanced Settings) to use only your own data.")
 
 paid_frame, stream_frame = paid.frame, streams.frame
 

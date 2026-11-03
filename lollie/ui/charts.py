@@ -148,9 +148,10 @@ def streaming_intelligence_chart(
     if view_range:
         figure.update_xaxes(range=[_py(view_range[0]), _py(view_range[1] + pd.Timedelta(days=1))])
     figure.update_layout(
-        title=title, hovermode="x unified", template="plotly_white", font=FONT,
-        height=720 if has_spend else 560, margin=dict(l=40, r=40, t=130, b=40), bargap=0.15,
-        legend=dict(orientation="h", yanchor="bottom", y=1.08, xanchor="left", x=0),
+        hovermode="x unified", template="plotly_white", font=FONT,
+        height=740 if has_spend else 580, margin=dict(l=40, r=40, t=170, b=40), bargap=0.15,
+        title=dict(text=title, x=0, xanchor="left", y=0.97, yanchor="top", font=dict(size=16)),
+        legend=dict(orientation="h", yanchor="bottom", y=1.05, xanchor="left", x=0, font=dict(size=11)),
     )
     return figure
 

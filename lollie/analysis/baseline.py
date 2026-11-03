@@ -115,6 +115,10 @@ class WindowAnalysis:
     def reading(self) -> str:
         return self.assessment.reading if self.assessment is not None else "Not assessed"
 
+    @property
+    def short_reading(self) -> str:
+        return self.assessment.short_reading if self.assessment is not None else "Not assessed"
+
 
 def _stats(label: str, series: pd.Series, start: pd.Timestamp, end: pd.Timestamp) -> WindowStats:
     days = (end - start).days + 1 if end >= start else 0

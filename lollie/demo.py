@@ -45,8 +45,8 @@ WEEKDAY = [0.95, 0.95, 0.97, 1.0, 1.08, 1.1, 1.0]
 C1 = "DEMO | Neon Skyline | Single launch"
 C1_START, C1_END = pd.Timestamp("2026-03-01"), pd.Timestamp("2026-03-21")
 C2 = "DEMO | Summer Playlist push"
-C2_START, C2_END = pd.Timestamp("2026-05-10"), pd.Timestamp("2026-05-30")
-DATA_START, DATA_END = pd.Timestamp("2025-10-15"), pd.Timestamp("2026-06-30")
+C2_START, C2_END = pd.Timestamp("2026-06-14"), pd.Timestamp("2026-07-04")
+DATA_START, DATA_END = pd.Timestamp("2025-10-15"), pd.Timestamp("2026-07-25")
 CATALOG_GROWTH_PER_DAY = 0.0005
 VIRAL_MARKET, VIRAL_START, VIRAL_DAYS = "Brazil", pd.Timestamp("2026-01-20"), (3.0, 4.5, 2.5)
 
@@ -169,7 +169,7 @@ def demo_track_list_raw() -> pd.DataFrame:
             "Track Title": [t[0] for t in TRACKS],
             "Artist": DEMO_ARTIST,
             "ISRC": [t[1] for t in TRACKS],
-            "Added to playlist": ["2026-05-01"] * len(TRACKS),
+            "Added to playlist": ["2026-06-01"] * len(TRACKS),
             "Removed from playlist": [""] * len(TRACKS),
         }
     )

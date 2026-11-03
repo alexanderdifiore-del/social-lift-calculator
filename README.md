@@ -5,7 +5,7 @@ Lollie is a small Streamlit prototype that answers one question:
 > When we run paid media campaigns, what happens to the streaming performance of the music we are promoting?
 
 It lines up an advertising report (WAVO or similar) with a streaming report (Opus or similar) and shows, for one campaign:
-paid media performance, streams before / during / after the campaign against an expected baseline, a country-by-country
+paid media performance, streams before / during / after the campaign against a Global Catalog baseline built from each recording's own history, a country-by-country
 comparison, and a short factual summary.
 
 It is **observational**. It describes *observed streaming change versus baseline*; it never claims the advertising caused it.
@@ -33,7 +33,7 @@ Synthetic practice files are in `sample_data/`:
 | `sample_streaming_daily.csv` or `.xlsx` | 2 · Streaming report |
 | `sample_playlist_track_list.csv` | 3 · Track list (only for the "Summer Playlist push" campaign) |
 
-Or switch on **Demo mode** (sidebar, *Advanced / Demo*) to see the same data without uploading anything. Demo mode is clearly
+Or switch on **Demo mode** (sidebar, *Advanced Settings*) to see the same data without uploading anything. Demo mode is clearly
 labelled and never mixed with real data. Regenerate the files with `python -m lollie.demo sample_data`.
 
 ## Using your own files
@@ -55,9 +55,21 @@ Details: [`docs/data_requirements.md`](docs/data_requirements.md), [`docs/method
 | --- | --- |
 | A · Campaign Overview | Artist, campaign, platform, country, DSP and date filters; promoted song or playlist; campaign start / end |
 | B · Paid Media Performance | Spend, impressions, views, engagements, clicks, landing page views, CPM, CPC, budget, results and goal attainment by result type, by-country table |
-| C · Streaming Intelligence | Actual vs expected streams, 7-day trend, campaign start / end markers, ad spend on a shared date axis, optional organic social post markers, before / during / after figures |
+| C · Streaming Intelligence | Expected, actual, observed change and % change vs. baseline; optional Estimated Streaming Value Change; expected vs actual chart with typical range from history, campaign start / end markers and ad spend; song-by-song table for playlists |
 | D · Market Comparison | Ad spend, landing page views and streaming change by country, with low-paid countries shown for reference only |
 | E · Campaign Summary | Plain factual summary with data limitations, plus comparison with other campaigns |
+
+**Global Catalog baselines.** Expected streams come from each recording's own history before the campaign (14, 28, 56 or 90
+days; 56 preferred), with a weekday pattern, a gentle trend only when the history shows one, and spike days set aside. A
+change is compared with that recording's normal variability, so a small change is not automatically called significant.
+See [`docs/methodology.md`](docs/methodology.md).
+
+**Estimated Streaming Value Change (optional).** Observed streaming change x an assumed USD 0.004 per Spotify stream
+(editable or off in *Advanced Settings*). It is a planning estimate, not WMG revenue, royalties, profit or ad ROI, and it is
+never used in the baseline.
+
+Radio statistics are not part of Lollie. Streaming on Spotify, Apple Music, Amazon Music, YouTube Music and other DSPs, and
+YouTube paid advertising, are supported.
 
 The original Lollie look (teal branding, white background, simple sidebar, large KPIs, interactive Plotly expected-versus-actual
 chart, impact window and social post markers, artist / track information) is kept.
@@ -69,9 +81,10 @@ app.py, social_lift_calculator.py   the Streamlit page (app.py is a launcher)
 lollie/
   paid/       advertising report import, metrics, daily series
   streams/    streaming report import, track and playlist matching
-  analysis/   baseline, pre / during / post, countries, overlaps, timing
+  analysis/   baseline (Global Catalog model, backtest, per-track scope), pre / during / post, countries, overlaps, timing
   ui/         charts and section helpers
   summary.py  factual campaign summary
+  valuation.py  optional Estimated Streaming Value Change
   geo.py      country matching
   demo.py     synthetic demo data and sample files
 tests/        automated tests (python -m pytest)

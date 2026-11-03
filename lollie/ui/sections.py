@@ -81,8 +81,7 @@ def results_sentences(results: pd.DataFrame, currency: str) -> list[str]:
 
 
 def render_streaming_tiles(analysis: WindowAnalysis, value: StreamingValue | None = None) -> None:
-    show_value = value is not None and value.enabled
-    columns = st.columns(5 if show_value else 4)
+    columns = st.columns(4)
     columns[0].metric(
         "Expected Streams",
         number(analysis.during_expected),
@@ -97,12 +96,11 @@ def render_streaming_tiles(analysis: WindowAnalysis, value: StreamingValue | Non
     columns[3].metric(
         "Percentage Change vs. Baseline",
         pct_text(analysis.pct_change),
-        delta=analysis.reading if analysis.pct_change is not None else None,
-        delta_color="off",
-        help="Observed change as a percentage of expected streams, with a reading of whether it is bigger than this recording's normal variation.",
+        help="Observed change as a percentage of expected streams. The badge says whether the change is bigger than this "
+        "recording's normal variation.",
     )
-    if show_value:
-        columns[4].metric(VALUE_LABEL, value.display, help=VALUE_TOOLTIP)
+    if analysis.assessment is not None and analysis.pct_change is not None:
+        columns[3].badge(analysis.assessment.short_reading, color="primary" if analysis.assessment.outside else "gray")
     coverage = analysis.during.coverage
     st.caption(
         f"Average daily streams: before {number(analysis.baseline.average)}, during {number(analysis.during.average)}, "
@@ -111,14 +109,17 @@ def render_streaming_tiles(analysis: WindowAnalysis, value: StreamingValue | Non
         + f"History window: {analysis.baseline.start:%b %d} to {analysis.baseline.end:%b %d} "
         f"({analysis.baseline.days_with_data} of {analysis.baseline.days_in_window} days with data)."
     )
-    if show_value:
-        if value.calculated:
-            st.caption(
-                f"{VALUE_LABEL}: {value.streams_change:+,.0f} Spotify streams x \\${value.rate:g} assumed per stream. "
-                "A planning estimate only, not revenue, royalties or ad ROI."
-            )
-        elif value.reason:
-            st.caption(f"{VALUE_LABEL}: not calculated. {value.reason}")
+    if value is not None and value.enabled:
+        value_columns = st.columns([1, 3])
+        value_columns[0].metric(VALUE_LABEL, value.display, help=VALUE_TOOLTIP)
+        with value_columns[1]:
+            if value.calculated:
+                st.caption(
+                    f"{value.streams_change:+,.0f} observed Spotify streams x \\${value.rate:g} assumed per stream. "
+                    "A planning estimate only: not revenue, royalties, profit or ad ROI, and not shown to be caused by the ads."
+                )
+            elif value.reason:
+                st.caption(f"Not calculated. {value.reason}")
 
 
 def render_baseline_check(analysis: WindowAnalysis) -> None:

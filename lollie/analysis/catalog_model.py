@@ -15,8 +15,8 @@ particular catalog):
    ``MIN_PER_WEEKDAY`` days of history.
 3. **Gradual trend.** A straight line through the history (Theil-Sen: the median of all
    day-to-day slopes, so a few odd days cannot tilt it). Used only when the history is
-   long enough, the rise or fall is steady and it adds up to at least ``TREND_MIN_CHANGE``
-   across the window. Projected forward with damping (it fades, it is not assumed to
+   long enough, the rise or fall is steady (rank correlation with time clearly above chance)
+   and it adds up to at least ``TREND_MIN_CHANGE`` across the window. Projected forward with damping (it fades, it is not assumed to
    continue forever) and capped.
 4. **Spikes.** Days far away from this fitted pattern (more than ``SPIKE_Z`` robust
    standard deviations) are set aside and the pattern is refitted, so one viral day or one
@@ -38,8 +38,8 @@ import pandas as pd
 MIN_PER_WEEKDAY = 2
 WEEKDAY_MIN_DAYS = 14
 TREND_MIN_DAYS = 28
-TREND_MIN_RHO = 0.4
-TREND_MIN_CHANGE = 0.05
+TREND_MIN_RHO = 0.3
+TREND_MIN_CHANGE = 0.015
 TREND_DAMPING = 0.99
 TREND_PROJECTION_CAP = 0.25
 SPIKE_Z = 3.5
@@ -209,7 +209,10 @@ def fit_baseline(observed: pd.Series, window_end: pd.Timestamp, *, use_trend: bo
             mid = a + s * float(np.mean(tk))
             change = s * float(np.ptp(tk)) / mid if mid > 0 else None
             rho = pd.Series(tk).rank().corr(pd.Series(zk).rank())
-            if change is not None and pd.notna(rho) and abs(rho) >= TREND_MIN_RHO and abs(change) >= TREND_MIN_CHANGE:
+            if (
+                change is not None and pd.notna(rho) and abs(rho) >= max(TREND_MIN_RHO, 2.0 / np.sqrt(len(zk) - 1))
+                and abs(change) >= TREND_MIN_CHANGE
+            ):
                 slope, intercept, applied = s, a, True
         state.update(slope=slope, intercept=intercept, applied=applied, change=change)
 
@@ -317,6 +320,16 @@ READINGS = {
 }
 
 
+SHORT_READINGS = {
+    ABOVE: "Above normal range",
+    SLIGHTLY_ABOVE: "Slightly above range",
+    NORMAL_VARIATION: "Within normal range",
+    SLIGHTLY_BELOW: "Slightly below range",
+    BELOW: "Below normal range",
+    NOT_ASSESSED: "Not assessed",
+}
+
+
 @dataclass
 class Assessment:
     """How a campaign-period change compares with the recording's normal wobble."""
@@ -330,6 +343,14 @@ class Assessment:
     @property
     def reading(self) -> str:
         return READINGS[self.status]
+
+    @property
+    def short_reading(self) -> str:
+        return SHORT_READINGS[self.status]
+
+    @property
+    def outside(self) -> bool:
+        return self.status in (ABOVE, BELOW)
 
 
 def empirical_period_sigma(residuals: pd.Series | None, n_days: int) -> float | None:

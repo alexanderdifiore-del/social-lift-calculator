@@ -137,7 +137,7 @@ def campaign_comparison(
                 "Avg daily streams after": analysis.post.average,
                 "Change vs baseline": analysis.pct_change,
                 "Observed change (streams)": analysis.observed_change,
-                "Reading": analysis.reading if analysis.usable else "Not assessed",
+                "Reading": analysis.short_reading if analysis.usable else "Not assessed",
                 "Streaming data coverage": analysis.during.coverage,
                 "Baseline": analysis.method,
             }
