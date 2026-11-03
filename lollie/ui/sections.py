@@ -15,6 +15,8 @@ from lollie.streams.tracks import (
 from lollie.analysis.baseline import aggregate_daily, analyze_campaign_window
 from lollie.ui.charts import market_chart, streaming_intelligence_chart
 from lollie.ui.paid_sections import by_country_table, money, number, render_kpis, render_results, show_table
+from lollie.ui.streamlit_compat import plotly_chart as st_plotly_chart
+from lollie.ui.streamlit_compat import reading_label
 
 BASELINE_EXPLAINER = """
 **How the expected baseline is worked out**
@@ -91,7 +93,7 @@ def render_streaming_tiles(analysis: WindowAnalysis, value=None) -> None:
             reading = "Above normal range" if analysis.pct_change > 0 else "Below normal range"
         elif analysis.pct_change is not None and sigma and abs(analysis.pct_change) > sigma:
             reading = "Slightly above range" if analysis.pct_change > 0 else "Slightly below range"
-        st.badge(reading)
+        reading_label(reading)
         st.caption(
             f"Global Catalog baseline: {analysis.baseline.days_with_data} of {analysis.baseline.days_in_window} "
             f"history days with data. Expected streams use only pre-campaign history."
@@ -160,7 +162,7 @@ def render_streaming_section(
         st.warning(note)
     if not analysis.usable:
         st.info("A before / during comparison needs streaming data in both the baseline window and the campaign.")
-    st.plotly_chart(
+    st_plotly_chart(
         streaming_intelligence_chart(
             analysis,
             title=title,
@@ -171,7 +173,6 @@ def render_streaming_section(
             show_trend=show_trend,
             view_range=view_range,
         ),
-        width="stretch",
     )
     if analysis.method_text and analysis.usable:
         st.caption(f"Expected baseline: {analysis.method_text}")
@@ -248,7 +249,7 @@ def render_market_section(table: pd.DataFrame, rank_note: str | None, hidden_row
     if table.empty:
         st.info("Country comparison appears here once paid media and streaming data are loaded.")
         return
-    st.plotly_chart(market_chart(table), width="stretch")
+    st_plotly_chart(market_chart(table))
     shown = table[
         [
             "Market", "Paid activity", "Ad spend", "Landing page views", "Avg daily streams before",

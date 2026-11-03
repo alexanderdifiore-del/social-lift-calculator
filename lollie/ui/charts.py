@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -47,12 +48,13 @@ def streaming_intelligence_chart(
     if not expected.empty:
         if analysis.settings.catalog_mode:
             residual = (expected["actual"] - expected["expected"]).dropna()
-            relative_sigma = (
-                float((residual / expected.loc[residual.index, "expected"]).std())
-                if len(residual) > 2
-                else 0.0
-            )
-            if relative_sigma > 0:
+            relative_sigma = 0.0
+            if len(residual) > 2:
+                denom = expected["expected"].replace(0, np.nan)
+                relative = (residual / denom.loc[residual.index]).replace([np.inf, -np.inf], np.nan).dropna()
+                if len(relative) > 2:
+                    relative_sigma = float(relative.std())
+            if relative_sigma > 0 and np.isfinite(relative_sigma):
                 upper = expected["expected"] * (1 + 2 * relative_sigma)
                 lower = (expected["expected"] * (1 - 2 * relative_sigma)).clip(lower=0)
                 figure.add_trace(
