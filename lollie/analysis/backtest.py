@@ -5,7 +5,8 @@ before each pretend start, and see how far the expected streams were from what r
 happened. Those misses are the honest measure of how much the baseline can be off for a
 period of this length, so they feed the "normal variation" judgement and are shown to the user.
 
-Only data on or before ``history_end`` (the day before the real campaign's baseline window ends)
+Rare spike days (a viral day, a reporting error) are set aside in the check, the same way they are when the baseline
+itself is built, so normal variation describes ordinary ups and downs. Only data on or before ``history_end`` (the day before the real campaign's baseline window ends)
 is used, so the real campaign period never enters the check.
 """
 
@@ -16,7 +17,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
-from lollie.analysis.catalog_model import BAND_WIDTH, fit_baseline
+from lollie.analysis.catalog_model import BAND_WIDTH, MIN_SIGMA, SPIKE_Z, fit_baseline
 
 MAX_ORIGINS = 16
 STEP_DAYS = 3
@@ -120,7 +121,7 @@ def backtest_baseline(
         if valid.mean() < MIN_HORIZON_COVERAGE:
             continue
         expected_daily = np.zeros(int(valid.sum()))
-        naive_total = 0.0
+        naive_daily = np.zeros(int(valid.sum()))
         half_width = np.zeros(int(valid.sum()))
         ok = True
         for column in frame.columns:
@@ -134,23 +135,33 @@ def backtest_baseline(
                 break
             expected = model.predict(horizon)
             expected_daily += expected[valid].to_numpy()
-            naive_total += float(naive_flat_expected(observed, horizon)[valid].sum())
+            naive_daily += naive_flat_expected(observed, horizon)[valid].to_numpy()
             half_width += BAND_WIDTH * model.sigma_rel * expected[valid].to_numpy()
-        expected_total = float(expected_daily.sum())
-        if not ok or expected_total <= 0 or naive_total <= 0:
+        if not ok:
             continue
         actual_daily = actual.sum(axis=1)[valid].to_numpy()
+        with np.errstate(divide="ignore", invalid="ignore"):
+            day_sigma = half_width / BAND_WIDTH / np.where(expected_daily > 0, expected_daily, np.nan)
+            deviation = actual_daily / expected_daily - 1
+            miss = np.abs(deviation - np.median(deviation))
+        ordinary = miss <= SPIKE_Z * np.maximum(np.nan_to_num(day_sigma), MIN_SIGMA)
+        if ordinary.mean() < MIN_HORIZON_COVERAGE:
+            continue
+        expected_total = float(expected_daily[ordinary].sum())
+        naive_total = float(naive_daily[ordinary].sum())
+        if expected_total <= 0 or naive_total <= 0:
+            continue
         inside = (actual_daily >= np.maximum(expected_daily - half_width, 0.0)) & (actual_daily <= expected_daily + half_width)
-        act_total = float(actual_daily.sum())
+        act_total = float(actual_daily[ordinary].sum())
         rows.append(
             {
                 "origin": origin,
-                "days": int(valid.sum()),
+                "days": int(ordinary.sum()),
                 "expected": expected_total,
                 "actual": act_total,
                 "error": act_total / expected_total - 1,
                 "naive_error": act_total / naive_total - 1,
-                "within_band": float(inside.mean()),
+                "within_band": float(inside[ordinary].mean()),
             }
         )
     result.table = pd.DataFrame(rows).sort_values("origin").reset_index(drop=True) if rows else pd.DataFrame(
