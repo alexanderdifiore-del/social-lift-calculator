@@ -187,7 +187,7 @@ def analyze_campaign_window(
         flags.append(text)
     else:
         if settings.catalog_mode:
-            model = fit_baseline(observed, b_end)
+            model = fit_baseline(observed, b_end, use_trend=False)
             if model is None:
                 method, text, value = METHOD_NONE, "The Global Catalog baseline needs more usable history.", None
             else:

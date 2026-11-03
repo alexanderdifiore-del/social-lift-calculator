@@ -40,14 +40,15 @@ MARKET_BASE = {"United States": 5000, "United Kingdom": 1800, "Germany": 1500, "
 # Streaming response built into the synthetic world (share of baseline at full effect).
 MARKET_RESPONSE = {"United States": 0.35, "United Kingdom": 0.18, "Germany": 0.04, "Brazil": 0.5, "Mexico": 0.0, "France": 0.0}
 CPM = {"United States": 9.0, "United Kingdom": 8.0, "Germany": 8.0, "Brazil": 3.0, "Mexico": 2.5}
-WEEKDAY = [0.95, 0.95, 0.97, 1.0, 1.08, 1.1, 1.0]
+# Mild weekday ripple (catalog-like), not a strong frontline-style weekly swing.
+WEEKDAY = [0.99, 0.99, 0.995, 1.0, 1.02, 1.03, 1.0]
 
 C1 = "DEMO | Neon Skyline | Single launch"
 C1_START, C1_END = pd.Timestamp("2026-03-01"), pd.Timestamp("2026-03-21")
 C2 = "DEMO | Summer Playlist push"
 C2_START, C2_END = pd.Timestamp("2026-06-14"), pd.Timestamp("2026-07-04")
 DATA_START, DATA_END = pd.Timestamp("2025-10-15"), pd.Timestamp("2026-07-25")
-CATALOG_GROWTH_PER_DAY = 0.0002
+CATALOG_GROWTH_PER_DAY = 0.0001
 
 # (campaign, platform, market, budget, objective, result type, promoted item, isrc, start, end)
 PLAN = [
