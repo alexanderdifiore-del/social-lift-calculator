@@ -2,9 +2,9 @@
 
 Nothing here comes from a real artist, report or company system. The numbers are
 generated with a fixed random seed so the demo and the sample files are the same
-every time. In the demo world the catalog drifts up slowly, Brazil has a short viral moment
-that is unrelated to any ad, and some countries are given a modest streaming response to the
-campaigns and others none, purely so the dashboard has something to show.
+every time. In the demo world the catalog has a mild, steady drift and a normal weekday
+pattern. Some countries are given a modest streaming response to the campaigns and others
+none, purely so the dashboard has something to show.
 
 Run ``python -m lollie.demo sample_data`` to write sample CSV / Excel files you can
 upload to practice with.
@@ -47,8 +47,7 @@ C1_START, C1_END = pd.Timestamp("2026-03-01"), pd.Timestamp("2026-03-21")
 C2 = "DEMO | Summer Playlist push"
 C2_START, C2_END = pd.Timestamp("2026-06-14"), pd.Timestamp("2026-07-04")
 DATA_START, DATA_END = pd.Timestamp("2025-10-15"), pd.Timestamp("2026-07-25")
-CATALOG_GROWTH_PER_DAY = 0.0005
-VIRAL_MARKET, VIRAL_START, VIRAL_DAYS = "Brazil", pd.Timestamp("2026-01-20"), (3.0, 4.5, 2.5)
+CATALOG_GROWTH_PER_DAY = 0.0002
 
 # (campaign, platform, market, budget, objective, result type, promoted item, isrc, start, end)
 PLAN = [
@@ -139,10 +138,7 @@ def demo_streams_raw() -> pd.DataFrame:
                     if market in ("United States", "Brazil"):
                         lift += _response(day, C2_START, C2_END, gain * 0.6)
                     organic = (1 + CATALOG_GROWTH_PER_DAY) ** (day - DATA_START).days
-                    viral = 1.0
-                    if market == VIRAL_MARKET and 0 <= (day - VIRAL_START).days < len(VIRAL_DAYS):
-                        viral = VIRAL_DAYS[(day - VIRAL_START).days]
-                    value = level * WEEKDAY[day.day_of_week] * organic * viral * (1 + lift) * rng.lognormal(0, 0.06)
+                    value = level * WEEKDAY[day.day_of_week] * organic * (1 + lift) * rng.lognormal(0, 0.06)
                     rows.append(
                         {
                             "Date": day.strftime("%Y-%m-%d"),

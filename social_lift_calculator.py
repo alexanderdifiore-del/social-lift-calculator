@@ -1,10 +1,10 @@
-"""Lollie V2: Global Catalog paid media and streaming intelligence.
+"""Lollie V2: paid media and streaming intelligence.
 
 Question this prototype answers: when we run paid media campaigns, what happens to the
 streaming performance of the music we are promoting?
 
 Everything is observational. Lollie compares streaming during and after a campaign with
-a Global Catalog baseline built from the recording's own history before it. It does not claim the advertising caused any change.
+a baseline from before it. It does not claim the advertising caused any change.
 Real files are processed in this session only; nothing is sent to any outside service.
 """
 
@@ -15,11 +15,10 @@ from datetime import datetime
 import pandas as pd
 import streamlit as st
 
-from lollie.analysis.baseline import AnalysisSettings, baseline_window
+from lollie.analysis.baseline import AnalysisSettings, aggregate_daily, analyze_campaign_window, baseline_window
 from lollie.analysis.campaigns import CampaignDates, campaign_dates, overlap_notes
 from lollie.analysis.markets import PAID, market_comparison, market_rank_note
 from lollie.analysis.relationships import lag_relationship, spend_series
-from lollie.analysis.streaming import analyze_scope
 from lollie.branding import render_lollie_header, render_section_title
 from lollie.demo import DEMO_LABEL, load_demo
 from lollie.geo import ALL_MARKETS_CODE
@@ -52,7 +51,7 @@ from lollie.ui.stream_import import StreamData, ingest_stream_files
 
 st.set_page_config(page_title="lollie", page_icon="🍭", layout="wide")
 
-render_lollie_header("global catalog • paid media • streaming intelligence")
+render_lollie_header("paid media • streaming intelligence")
 
 # The Demo switch sits at the bottom of the sidebar but is needed first; Streamlit has
 # already stored its value before the script runs.
@@ -104,16 +103,9 @@ track_file = st.sidebar.file_uploader(
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("Analysis windows")
-WINDOW_AUTO = "Auto (56 days preferred)"
-WINDOW_CHOICES = {WINDOW_AUTO: 56, "14 days": 14, "28 days": 28, "56 days": 56, "90 days": 90}
-window_choice = st.sidebar.selectbox(
-    "Historical baseline window",
-    list(WINDOW_CHOICES),
-    index=0,
-    help="How many days before launch describe what is normal for the recording. 56 days is preferred; Auto uses it whenever "
-    "there is enough history and a shorter window otherwise.",
+baseline_days = st.sidebar.slider(
+    "Baseline length (days before launch)", 7, 56, 28, help="Streams in these days set the expected level."
 )
-baseline_days = WINDOW_CHOICES[window_choice]
 post_days = st.sidebar.slider(
     "After-campaign window (days)", 0, 28, 14, help="Days after the campaign ends that are checked for a lingering change."
 )
@@ -176,33 +168,19 @@ with st.sidebar.expander("Advanced Settings", expanded=demo_mode):
         help="Countries below this share of spend are listed as 'Reference only'.",
     )
     show_trend = st.checkbox("Show 7-day trend line", True)
-    show_band = st.checkbox(
-        "Show typical range from history", True,
-        help="Shades the range this recording's streams normally fall in, measured from its own history before the campaign.",
-    )
-    use_trend = st.checkbox(
-        "Let the baseline follow a gradual rise or fall", True,
-        help="Applies only when the history is long enough and shows a steady direction. Turn off for a flat baseline.",
-    )
-    st.markdown("**Estimated Streaming Value Change**")
-    value_enabled = st.checkbox(
-        "Show the estimate", True,
-        help="A small optional metric: observed streaming change x an assumed value per Spotify stream. It never changes the baseline.",
-    )
+    show_estimate = st.checkbox("Show estimated streaming value", True)
     value_rate = st.number_input(
-        "Assumed value per Spotify stream (USD)", min_value=0.0, value=DEFAULT_RATE_USD, step=0.0005, format="%.4f",
-        key="value_rate", disabled=not value_enabled,
-        help="Default $0.004. Spotify has no universal fixed per-stream royalty, so treat this as an editable assumption. "
-        "It is applied to Spotify streams only.",
+        "Assumed value per Spotify stream (USD)",
+        min_value=0.0,
+        value=DEFAULT_RATE_USD,
+        step=0.0005,
+        format="%.4f",
+        disabled=not show_estimate,
+        help="Spotify has no universal fixed per-stream royalty. This is a planning assumption only.",
     )
 
 settings = AnalysisSettings(
-    baseline_days=baseline_days,
-    post_days=post_days,
-    gap_days=gap_days,
-    min_baseline_days=min_baseline_days,
-    auto_window=window_choice == WINDOW_AUTO,
-    use_trend=use_trend,
+    baseline_days=baseline_days, post_days=post_days, gap_days=gap_days, min_baseline_days=min_baseline_days
 )
 
 # -----------------------------
@@ -222,7 +200,7 @@ else:
     paid_issues, stream_issues = paid.issues, streams.issues
 
 if demo_mode:
-    st.warning(f"**DEMO MODE.** {DEMO_LABEL} Turn off Demo mode in the sidebar (Advanced Settings) to use only your own data.")
+    st.warning(f"**DEMO MODE.** {DEMO_LABEL} Turn off Demo mode in the sidebar (Advanced / Demo) to use only your own data.")
 
 paid_frame, stream_frame = paid.frame, streams.frame
 
@@ -239,7 +217,7 @@ Nothing is loaded yet. To get started:
 2. Upload a **streaming report** (Opus or another approved export, CSV or Excel).
 3. Choose the artist, campaign and song in **Campaign Overview** below. If the report lists a playlist, choose the tracks on it.
 
-Want to look around first? Open **Advanced Settings** at the bottom of the sidebar and switch on Demo mode. It uses clearly
+Want to look around first? Open **Advanced / Demo** at the bottom of the sidebar and switch on Demo mode. It uses clearly
 labelled synthetic data. Practice files you can upload are in the `sample_data` folder.
 """
     )
@@ -390,7 +368,7 @@ if dates.known:
     picked = st.date_input(
         "Date range shown",
         value=default_view,
-        key=f"f_range_{campaign_choice}_{baseline_days}_{window_choice == WINDOW_AUTO}_{post_days}_{dates.start:%Y%m%d}",
+        key=f"f_range_{campaign_choice}_{baseline_days}_{post_days}_{dates.start:%Y%m%d}",
         help="Changes the dates shown in the charts and paid media totals. The analysis windows stay tied to the campaign dates.",
     )
     if isinstance(picked, (tuple, list)) and len(picked) == 2:
@@ -419,8 +397,8 @@ else:
 
 render_section_title("C · Streaming Intelligence")
 analysis = None
-relationship = None
 value = None
+relationship = None
 agg_notes: list[str] = []
 spend_daily = pd.DataFrame()
 if streams.is_empty:
@@ -432,34 +410,26 @@ elif matched.empty:
 elif not dates.known:
     st.info("Enter campaign start and end dates in Campaign Overview to compare streaming before, during and after.")
 else:
-    scope_result = analyze_scope(matched, scope.tracks, dsp_choice, streaming_codes, dates.start, dates.end, settings)
-    agg_notes = list(scope_result.notes)
+    series, agg_notes = aggregate_daily(daily_all, streaming_codes)
     if no_country_data:
         agg_notes = ["The streaming file has no country column, so streams for all countries are used and country filters do not apply."] + agg_notes
-    if scope_result.analysis is None:
+    if series.empty:
         st.warning("There is no streaming data for the selected countries and DSP.")
     else:
-        analysis = scope_result.analysis
+        analysis = analyze_campaign_window(series, dates.start, dates.end, settings)
+        value = estimate_streaming_value(
+            analysis.observed_change,
+            value_rate,
+            enabled=show_estimate,
+            applies=dsp_choice == "Spotify",
+            reason_if_not_applicable="The estimate is available for Spotify only.",
+        )
         if not paid_campaign.empty:
             spend_daily = daily_series(paid_campaign)[["date", "spend"]]
             frame_series = analysis.series.set_index("date")
             relationship = lag_relationship(
                 spend_series(paid_campaign, dates.start, dates.end), frame_series["actual"], frame_series["expected"]
             )
-        spotify_change, value_applies, value_reason = None, True, ""
-        if dsp_choice == "Spotify":
-            spotify_change = analysis.observed_change if analysis.usable else None
-        elif dsp_choice == "All DSPs":
-            spotify = analyze_scope(matched, scope.tracks, "Spotify", streaming_codes, dates.start, dates.end, settings).analysis
-            if spotify is None:
-                value_applies, value_reason = False, "Spotify streams were not found separately in the streaming data."
-            else:
-                spotify_change = spotify.observed_change if spotify.usable else None
-        else:
-            value_applies, value_reason = False, f"The assumed rate applies to Spotify streams only and {dsp_choice} is selected."
-        value = estimate_streaming_value(
-            spotify_change, value_rate, enabled=value_enabled, applies=value_applies, reason_if_not_applicable=value_reason
-        )
         market_text = ", ".join(market_choice[:4]) + ("…" if len(market_choice) > 4 else "") if market_choice else "all countries"
         render_streaming_section(
             analysis,
@@ -473,10 +443,9 @@ else:
             notes=agg_notes,
             relationship=relationship,
             value=value,
-            show_band=show_band,
         )
         if scope.track_count > 1:
-            render_track_breakdown(scope_result)
+            render_track_breakdown(matched, scope.tracks, dsp_choice, streaming_codes, dates.start, dates.end, settings)
         render_source_streams(matched)
 
 source_present = bool(not matched.empty and (matched["scope"] != "total").any())
@@ -543,8 +512,6 @@ else:
         source_attributed_present=source_present,
         membership_verified=scope.membership_verified,
         multi_track=scope.mode != "single",
-        value=value,
-        events=organic_posts,
     )
     if not kpis and analysis is None:
         st.info("Load a paid media report and a streaming report, then choose a campaign and song, to see the summary.")
@@ -577,14 +544,9 @@ with st.expander("Import notes"):
 with st.expander("How to read this dashboard"):
     st.markdown(
         """
-* **Expected** streams are the Global Catalog baseline: what is normal for this recording, worked out only from its own history
-  before the campaign (see *How the expected baseline is calculated* under the chart). It follows the weekly pattern and any
-  steady rise or fall, and sets aside one-off spikes.
-* **Observed Streaming Change** and **Percentage Change vs. Baseline** compare actual streams with that expected level. They
-  describe what happened; they do not prove the advertising caused it. The reading beside the percentage says whether the change
-  is bigger than this recording's normal variation, so a small change can matter for a steady song and not for a volatile one.
-* **Estimated Streaming Value Change** is optional: the observed change in Spotify streams times an assumed value per stream
-  (default \\$0.004, editable in Advanced Settings). It is a rough estimate, not revenue, royalties or ad ROI.
+* **Expected** streams come from the days before the campaign (see *How the expected baseline is calculated* under the chart).
+* **Observed streaming change** and **Change versus baseline** compare actual streams with that expected level. They describe what
+  happened; they do not prove the advertising caused it.
 * A **Potential positive relationship** means ad spend and streaming change moved up and down together on the same or following days.
   It is a pattern to investigate, not a result.
 * Streams credited to a playlist or source are kept separate from total track streams and never added to them.

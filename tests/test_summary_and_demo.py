@@ -94,9 +94,7 @@ def test_summary_lists_markets_with_positive_and_limited_change():
         {
             "Market": ["United States", "Germany"], "Paid activity": ["Paid", "Paid"],
             "Change vs baseline": [0.3, 0.02],
-            "Reading": ["Above baseline, outside normal variation", "Within normal variation"],
         }
     )
     text = _summary(None, market_table=table).to_markdown()
-    assert "United States (+30%)" in text and "Germany (+2%)" in text
-    assert "outside normal variation in 1 of 2 paid countries" in text
+    assert "United States" in text and "Germany (+2%)" in text

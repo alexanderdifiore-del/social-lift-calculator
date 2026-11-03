@@ -7,10 +7,8 @@ from dataclasses import dataclass, field
 import pandas as pd
 
 from lollie.analysis.baseline import WindowAnalysis
-from lollie.analysis.catalog_model import NORMAL_VARIATION, NOT_ASSESSED, SLIGHTLY_ABOVE, SLIGHTLY_BELOW
 from lollie.analysis.markets import PAID
 from lollie.analysis.relationships import Relationship
-from lollie.valuation import LABEL as VALUE_LABEL, StreamingValue
 
 SECTION_ORDER = ["Advertising", "Streaming", "Markets", "Timing", "Data limitations"]
 
@@ -46,29 +44,6 @@ def _pct(value: float | None) -> str:
     return "n/a" if value is None or pd.isna(value) else f"{value:+.0%}"
 
 
-def describe_change(analysis: WindowAnalysis, period: str = "during") -> str | None:
-    """One careful sentence: how streaming compared with the historical baseline, and whether that is unusual for this recording."""
-    if period == "during":
-        pct, assessed, label = analysis.pct_change, analysis.assessment, "during the campaign"
-    else:
-        pct, assessed = analysis.post_pct_change, analysis.post_assessment
-        label = f"in the {analysis.post.days_in_window} days after the campaign"
-    if pct is None or assessed is None or assessed.status == NOT_ASSESSED:
-        return None
-    if abs(pct) < 0.005:
-        head = f"Streaming performance was in line with the historical baseline {label}."
-    else:
-        head = f"Streaming performance was {abs(pct):.1%} {'above' if pct > 0 else 'below'} the historical baseline {label}."
-    swing = f"typically about \u00b1{assessed.typical_swing:.1%} for a period this long" if assessed.typical_swing is not None else ""
-    if assessed.status == NORMAL_VARIATION:
-        tail = f" That is within this recording's normal variation ({swing})." if swing else ""
-    elif assessed.status in (SLIGHTLY_ABOVE, SLIGHTLY_BELOW):
-        tail = f" That is at the edge of this recording's normal variation ({swing})." if swing else ""
-    else:
-        tail = f" That is larger than this recording's normal variation ({swing})." if swing else ""
-    return head + tail
-
-
 def build_summary(
     *,
     campaign: str,
@@ -86,8 +61,6 @@ def build_summary(
     source_attributed_present: bool = False,
     membership_verified: bool = True,
     multi_track: bool = False,
-    value: StreamingValue | None = None,
-    events: list[tuple[pd.Timestamp, str]] | None = None,
 ) -> Summary:
     summary = Summary({name: [] for name in SECTION_ORDER})
 
@@ -115,47 +88,28 @@ def build_summary(
             f"{_num(analysis.during.average)} during it"
             + (f" and {_num(analysis.post.average)} in the {analysis.post.days_in_window} days after." if analysis.post.average is not None else ".")
         )
-        sentence = describe_change(analysis)
         streaming.append(
-            (sentence + " " if sentence else "")
-            + f"Streams were {_num(analysis.during_actual)} against {_num(analysis.during_expected)} expected from the baseline: "
-            f"an observed change of {_num(analysis.observed_change)} streams ({_pct(analysis.pct_change)})."
+            f"During the campaign, streams were {_num(analysis.during_actual)} against {_num(analysis.during_expected)} expected from the "
+            f"baseline: an observed change of {_num(analysis.observed_change)} streams ({_pct(analysis.pct_change)}) versus baseline."
         )
-        post_sentence = describe_change(analysis, "post")
-        if post_sentence:
-            streaming.append(post_sentence)
-        streaming.append(f"Expected baseline: {analysis.method_text}")
-        if value is not None and value.enabled:
-            if value.calculated:
-                streaming.append(
-                    f"{VALUE_LABEL}: {value.display}, from {value.streams_change:+,.0f} observed Spotify streams at an assumed "
-                    f"${value.rate:g} per stream. This is a planning estimate, not WMG revenue, royalty income, profit or advertising ROI, "
-                    "and it does not show that the campaign caused the change."
-                )
-            else:
-                streaming.append(f"{VALUE_LABEL}: not calculated. {value.reason}".strip())
+        if analysis.post_pct_change is not None:
+            streaming.append(f"In the period after the campaign, streams were {_pct(analysis.post_pct_change)} versus the same baseline.")
+        streaming.append(f"Expected baseline method: {analysis.method.lower()}. {analysis.method_text}")
 
     markets = summary.sections["Markets"]
     if not market_table.empty:
         with_data = market_table[(market_table["Paid activity"] == PAID) & market_table["Change vs baseline"].notna()]
+        positive = with_data[with_data["Change vs baseline"] >= 0.10]
+        limited = with_data[with_data["Change vs baseline"] < 0.10]
         if not with_data.empty:
-            above = with_data[with_data["Reading"].str.startswith("Above")]
-            below = with_data[with_data["Reading"].str.startswith("Below")]
-            other = with_data[~with_data.index.isin(above.index.union(below.index))]
             markets.append(
-                f"Above the historical baseline and outside normal variation in {len(above)} of {len(with_data)} paid countries"
-                + (": " + ", ".join(f"{row['Market']} ({_pct(row['Change vs baseline'])})" for _, row in above.head(6).iterrows()) + "." if not above.empty else ".")
+                f"Higher than baseline (10% or more) in {len(positive)} of {len(with_data)} paid countries"
+                + (": " + ", ".join(positive["Market"].head(6)) + "." if not positive.empty else ".")
             )
-            if not below.empty:
+            if not limited.empty:
                 markets.append(
-                    "Below the historical baseline and outside normal variation in: "
-                    + ", ".join(f"{row['Market']} ({_pct(row['Change vs baseline'])})" for _, row in below.head(6).iterrows())
-                    + "."
-                )
-            if not other.empty:
-                markets.append(
-                    "Within normal variation (or borderline) in: "
-                    + ", ".join(f"{row['Market']} ({_pct(row['Change vs baseline'])})" for _, row in other.head(6).iterrows())
+                    "Limited or negative change (under 10%) in: "
+                    + ", ".join(f"{row['Market']} ({_pct(row['Change vs baseline'])})" for _, row in limited.head(6).iterrows())
                     + "."
                 )
         no_stream = market_table[(market_table["Paid activity"] == PAID) & market_table["Change vs baseline"].isna()]
@@ -173,17 +127,6 @@ def build_summary(
     elif relationship is not None and relationship.note:
         timing.append(relationship.note)
     timing.extend(overlap_notes)
-    if analysis is not None and events:
-        window_end = analysis.post.end if analysis.post.days_in_window else analysis.end
-        inside = [(d, label) for d, label in events if analysis.start <= d <= window_end]
-        if inside:
-            timing.append(
-                "Events marked on the chart during the campaign or after it: "
-                + "; ".join(f"{label} ({d:%b %d})" for d, label in inside[:5])
-                + ". Streaming change in this period may reflect them as well as the advertising."
-            )
-    if analysis is not None:
-        timing.extend(analysis.context)
 
     limits = summary.sections["Data limitations"]
     if dates_note:
@@ -198,8 +141,7 @@ def build_summary(
             "Playlist / source-attributed streams were loaded but are shown separately. Totals above use total track streams only."
         )
     limits.append(
-        "This is an observational comparison with the recording's own pre-campaign history. It does not show that the advertising "
-        "caused the change; releases, playlist placements, tours, anniversaries, social posts, press and seasonality can move "
-        "streams at the same time."
+        "This is an observational comparison with a before-campaign baseline. It does not show that the advertising caused the "
+        "change; releases, playlisting, social posts, press and seasonality can move streams at the same time."
     )
     return summary

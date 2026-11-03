@@ -112,7 +112,7 @@ def campaign_comparison(
     """Same analysis for every campaign, in the countries where that campaign advertised."""
     columns = [
         "Campaign", "Start", "End", "Ad spend", "Landing page views", "Avg daily streams before", "Avg daily streams during",
-        "Avg daily streams after", "Change vs baseline", "Observed change (streams)", "Reading", "Streaming data coverage", "Baseline",
+        "Avg daily streams after", "Change vs baseline", "Observed change (streams)", "Streaming data coverage", "Baseline",
     ]
     rows, analyses = [], {}
     for campaign, group in paid.groupby("campaign_name"):
@@ -137,7 +137,6 @@ def campaign_comparison(
                 "Avg daily streams after": analysis.post.average,
                 "Change vs baseline": analysis.pct_change,
                 "Observed change (streams)": analysis.observed_change,
-                "Reading": analysis.short_reading if analysis.usable else "Not assessed",
                 "Streaming data coverage": analysis.during.coverage,
                 "Baseline": analysis.method,
             }
@@ -148,18 +147,12 @@ def campaign_comparison(
 
 def repeated_pattern_note(table: pd.DataFrame) -> str | None:
     """Plain statement about whether several campaigns show the same direction of change."""
-    if table.empty or "Reading" not in table:
-        return None
-    valid = table[table["Change vs baseline"].notna() & (table["Reading"] != "Not assessed")]
+    valid = table["Change vs baseline"].dropna() if not table.empty else pd.Series(dtype=float)
     if len(valid) < 2:
         return None
-    above = int(valid["Reading"].str.startswith("Above").sum())
-    below = int(valid["Reading"].str.startswith("Below").sum())
-    within = len(valid) - above - below
-    text = (
-        f"Across {len(valid)} campaigns with a usable baseline, streaming ran above its own historical range during {above}, "
-        f"below it during {below}, and stayed within normal variation during {within}."
-    )
-    if above == len(valid):
+    up, down = int((valid >= 0.10).sum()), int((valid <= -0.10).sum())
+    flat = len(valid) - up - down
+    text = f"Across {len(valid)} campaigns with a usable baseline, streaming was at least 10% above baseline during {up}, at least 10% below during {down}, and within 10% during {flat}."
+    if up == len(valid):
         text += " The same direction in every campaign is a pattern worth checking, but it does not show the ads caused it."
     return text
