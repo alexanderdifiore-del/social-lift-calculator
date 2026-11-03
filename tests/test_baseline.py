@@ -3,9 +3,8 @@ import pandas as pd
 import pytest
 
 from lollie.analysis.baseline import (
+    METHOD_CATALOG,
     METHOD_NONE,
-    METHOD_OVERALL,
-    METHOD_WEEKDAY,
     AnalysisSettings,
     aggregate_daily,
     analyze_campaign_window,
@@ -28,7 +27,7 @@ def test_baseline_window_ends_the_day_before_launch_and_can_skip_days():
 
 def test_flat_streams_show_no_change():
     result = analyze_campaign_window(series(), START, END)
-    assert result.method == METHOD_WEEKDAY
+    assert result.method == METHOD_CATALOG
     assert result.observed_change == pytest.approx(0)
     assert result.pct_change == pytest.approx(0)
     assert result.baseline.average == pytest.approx(1000)
@@ -48,15 +47,17 @@ def test_weekday_pattern_is_not_mistaken_for_a_lift():
     idx = pd.date_range("2026-01-01", periods=70)
     s = pd.Series(np.where(idx.day_of_week >= 5, 1500.0, 1000.0), index=idx)
     result = analyze_campaign_window(s, START, END)
-    assert result.method == METHOD_WEEKDAY
+    assert result.model.weekday_factors is not None
     assert result.pct_change == pytest.approx(0, abs=1e-9)
 
 
-def test_short_baseline_falls_back_to_overall_median():
+def test_short_history_gives_a_rough_level_without_weekday_pattern_and_warns():
     s = series(first="2026-01-30", days=40)
     result = analyze_campaign_window(s, START, END, AnalysisSettings(baseline_days=28, min_baseline_days=7))
-    assert result.method == METHOD_OVERALL
+    assert result.method == METHOD_CATALOG
+    assert result.model.weekday_factors is None
     assert result.expected_value == pytest.approx(1000)
+    assert any("Short history" in flag for flag in result.flags)
 
 
 def test_too_little_baseline_data_gives_no_expected_line_and_says_why():
@@ -95,11 +96,22 @@ def test_no_data_after_campaign_is_flagged():
     assert any("after the campaign" in flag for flag in result.flags)
 
 
-def test_rising_baseline_trend_is_flagged():
+def test_steady_rise_in_history_is_followed_not_counted_as_a_campaign_change():
     idx = pd.date_range("2026-01-01", periods=70)
     s = pd.Series(np.linspace(1000, 2000, 70), index=idx)
     result = analyze_campaign_window(s, START, END)
+    assert result.model.trend_applied
+    assert abs(result.pct_change) < 0.03
+    assert any("gradually rising" in note for note in result.context)
+
+
+def test_rise_that_cannot_be_modelled_in_a_short_window_is_flagged():
+    idx = pd.date_range("2026-01-01", periods=70)
+    s = pd.Series(np.linspace(1000, 3500, 70), index=idx)
+    result = analyze_campaign_window(s, START, END, AnalysisSettings(baseline_days=14))
+    assert not result.model.trend_applied
     assert any("already rising" in flag for flag in result.flags)
+    assert any("cannot tell a gradual rise" in note for note in result.context)
 
 
 def test_chart_series_labels_windows():

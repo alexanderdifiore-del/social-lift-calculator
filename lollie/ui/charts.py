@@ -13,6 +13,7 @@ TEAL_DARK = "#008a99"
 TEAL_SOFT = "rgba(0, 168, 184, 0.45)"
 GREEN = "rgba(46, 184, 114, 0.30)"
 GRAY = "#7a8793"
+BAND = "rgba(122, 135, 147, 0.16)"
 FONT = dict(family="Helvetica Neue, Arial, sans-serif")
 
 
@@ -30,6 +31,7 @@ def streaming_intelligence_chart(
     impact_days: int = 2,
     show_trend: bool = True,
     view_range: tuple[pd.Timestamp, pd.Timestamp] | None = None,
+    show_band: bool = True,
 ) -> go.Figure:
     """Actual vs expected streams (top) with daily ad spend on the same dates (bottom)."""
     frame = analysis.series
@@ -44,10 +46,25 @@ def streaming_intelligence_chart(
     )
 
     expected = frame[frame["expected"].notna()]
+    if show_band and not expected.empty and expected["upper"].notna().any():
+        figure.add_trace(
+            go.Scatter(
+                x=expected["date"], y=expected["upper"], mode="lines", line=dict(width=0), showlegend=False, hoverinfo="skip",
+            ),
+            row=1, col=1,
+        )
+        figure.add_trace(
+            go.Scatter(
+                x=expected["date"], y=expected["lower"], mode="lines", line=dict(width=0), fill="tonexty",
+                fillcolor=BAND, name="Typical range from history",
+                hovertemplate="Typical low: %{y:,.0f}<extra></extra>",
+            ),
+            row=1, col=1,
+        )
     if not expected.empty:
         figure.add_trace(
             go.Scatter(
-                x=expected["date"], y=expected["expected"], mode="lines", name="Expected baseline streams",
+                x=expected["date"], y=expected["expected"], mode="lines", name="Expected Global Catalog baseline",
                 line=dict(color=GRAY, width=2, dash="dash"),
                 hovertemplate="Expected: %{y:,.0f}<extra></extra>",
             ),
@@ -83,7 +100,7 @@ def streaming_intelligence_chart(
 
     base = analysis.baseline
     for x0, x1, color, label in (
-        (base.start, base.end + pd.Timedelta(days=1), "rgba(122,135,147,0.07)", "Baseline window"),
+        (base.start, base.end + pd.Timedelta(days=1), "rgba(122,135,147,0.07)", "History window"),
         (start, end + pd.Timedelta(days=1), "rgba(0,168,184,0.10)", "Campaign"),
     ):
         figure.add_vrect(
@@ -154,13 +171,13 @@ def market_chart(table: pd.DataFrame) -> go.Figure:
     )
     change = shown["Change vs baseline"]
     colors = []
-    for value, activity in zip(change, shown["Paid activity"]):
+    for value, activity, reading in zip(change, shown["Paid activity"], shown["Reading"]):
         if pd.isna(value):
             colors.append("rgba(0,0,0,0)")
         elif activity != "Paid":
             colors.append("#c9d1d6")
         else:
-            colors.append(TEAL if value >= 0.10 else GRAY)
+            colors.append(TEAL if str(reading).startswith("Above") else GRAY)
     figure.add_trace(
         go.Bar(
             y=shown["Market"], x=change * 100, orientation="h", marker=dict(color=colors), name="Change vs baseline",

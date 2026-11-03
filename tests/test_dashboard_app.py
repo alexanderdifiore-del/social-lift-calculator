@@ -46,7 +46,7 @@ def test_demo_mode_shows_all_five_sections_and_is_labelled_synthetic():
         assert heading in text
     assert "synthetic" in text and "demo mode" in text
     labels = [m.label for m in at.metric]
-    assert "Spend" in labels and "Observed streaming change" in labels and "Change versus baseline" in labels
+    assert "Spend" in labels and {"Expected Streams", "Actual Streams", "Observed Streaming Change", "Percentage Change vs. Baseline"} <= set(labels)
 
 
 def test_turning_demo_off_removes_all_demo_data():
@@ -80,7 +80,7 @@ def test_uploading_one_paid_media_report_and_one_streaming_report():
     assert "189 rows read" in text and "daily rows read" in text
     assert not any("demo mode" in w.value.lower() for w in at.warning)
     labels = [m.label for m in at.metric]
-    assert {"Campaign start", "Spend", "Before campaign", "During campaign"} <= set(labels)
+    assert {"Campaign start", "Spend", "Expected Streams", "Actual Streams", "Observed Streaming Change"} <= set(labels)
     assert at.selectbox(key="f_campaign").value.startswith("DEMO | Neon Skyline")
 
 
@@ -112,7 +112,7 @@ def test_playlist_campaign_with_an_uploaded_track_list():
     text = page_text(at)
     assert "using the uploaded track list: 3 track(s)" in text
     labels = [m.label for m in at.metric]
-    assert "During campaign" in labels
+    assert "Actual Streams" in labels
     assert any("track membership is not marked as verified" in c.value.lower() for c in at.caption)
 
 
@@ -136,4 +136,4 @@ def test_streaming_file_without_country_or_track_columns_still_works():
     at.run()
     assert not at.exception
     assert "no country column" in page_text(at)
-    assert "Change versus baseline" in [m.label for m in at.metric]
+    assert "Percentage Change vs. Baseline" in [m.label for m in at.metric]

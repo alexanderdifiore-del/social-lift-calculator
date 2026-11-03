@@ -170,6 +170,12 @@ def test_campaign_comparison_uses_each_campaigns_own_baseline_and_countries():
 
 
 def test_repeated_pattern_note_needs_two_campaigns():
-    assert repeated_pattern_note(pd.DataFrame({"Change vs baseline": [0.3]})) is None
-    note = repeated_pattern_note(pd.DataFrame({"Change vs baseline": [0.3, 0.2]}))
+    above = "Above baseline, outside normal variation"
+    assert repeated_pattern_note(pd.DataFrame({"Change vs baseline": [0.3], "Reading": [above]})) is None
+    note = repeated_pattern_note(pd.DataFrame({"Change vs baseline": [0.3, 0.2], "Reading": [above, above]}))
     assert "does not show the ads caused it" in note
+    mixed = repeated_pattern_note(
+        pd.DataFrame({"Change vs baseline": [0.3, 0.01], "Reading": [above, "Within normal variation"]})
+    )
+    assert "above its own historical range during 1" in mixed and "within normal variation during 1" in mixed
+    assert "caused it" not in mixed

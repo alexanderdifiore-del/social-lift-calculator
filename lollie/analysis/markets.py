@@ -9,7 +9,6 @@ from lollie.analysis.baseline import (
     WindowAnalysis,
     aggregate_daily,
     analyze_campaign_window,
-    label_change,
 )
 from lollie.analysis.campaigns import campaign_dates
 from lollie.analysis.relationships import (
@@ -101,7 +100,7 @@ def market_comparison(
                 "Avg daily streams after": analysis.post.average if analysis else None,
                 "Observed change (streams)": analysis.observed_change if analysis else None,
                 "Change vs baseline": analysis.pct_change if analysis else None,
-                "Reading": label_change(analysis.pct_change) if analysis else "No streaming data",
+                "Reading": analysis.reading if analysis and analysis.usable else ("Not assessed" if analysis else "No streaming data"),
                 "Streaming data coverage": analysis.during.coverage if analysis else None,
                 "Spend and streaming pattern": relation.label if activity == PAID else "Not assessed",
                 "Notes": " ".join(notes),
