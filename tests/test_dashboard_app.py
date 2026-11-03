@@ -46,7 +46,9 @@ def test_demo_mode_shows_all_five_sections_and_is_labelled_synthetic():
         assert heading in text
     assert "synthetic" in text and "demo mode" in text
     labels = [m.label for m in at.metric]
-    assert "Spend" in labels and "Observed streaming change" in labels and "Change versus baseline" in labels
+    assert "Spend" in labels
+    assert any(label in labels for label in ("Observed streaming change", "Observed Streaming Change"))
+    assert any(label in labels for label in ("Change versus baseline", "Percentage Change vs. Baseline"))
 
 
 def test_turning_demo_off_removes_all_demo_data():

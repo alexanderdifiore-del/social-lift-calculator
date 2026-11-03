@@ -71,6 +71,39 @@ def results_sentences(results: pd.DataFrame, currency: str) -> list[str]:
 
 
 def render_streaming_tiles(analysis: WindowAnalysis, value=None) -> None:
+    if analysis.settings.catalog_mode:
+        columns = st.columns(4)
+        columns[0].metric("Expected Streams", number(analysis.during_expected))
+        columns[1].metric("Actual Streams", number(analysis.during_actual))
+        columns[2].metric(
+            "Observed Streaming Change",
+            "n/a" if analysis.observed_change is None else f"{analysis.observed_change:+,.0f}",
+        )
+        columns[3].metric("Percentage Change vs. Baseline", pct_text(analysis.pct_change))
+        history = analysis.series[
+            (analysis.series["window"] == "Before")
+            & analysis.series["actual"].notna()
+            & analysis.series["expected"].notna()
+        ]
+        sigma = ((history["actual"] - history["expected"]) / history["expected"]).std() if len(history) > 2 else None
+        reading = "Within normal range"
+        if analysis.pct_change is not None and sigma and abs(analysis.pct_change) > max(2 * sigma, 0.02):
+            reading = "Above normal range" if analysis.pct_change > 0 else "Below normal range"
+        elif analysis.pct_change is not None and sigma and abs(analysis.pct_change) > sigma:
+            reading = "Slightly above range" if analysis.pct_change > 0 else "Slightly below range"
+        st.badge(reading)
+        st.caption(
+            f"Global Catalog baseline: {analysis.baseline.days_with_data} of {analysis.baseline.days_in_window} "
+            f"history days with data. Expected streams use only pre-campaign history."
+        )
+        if value is not None:
+            value_columns = st.columns([1, 3])
+            value_columns[0].metric("Estimated Streaming Value Change", value.display)
+            value_columns[1].caption(
+                f"{value.reason + ' ' if value.reason else ''}This is a planning estimate only; "
+                "it is not revenue, royalties, profit or ad ROI."
+            )
+        return
     columns = st.columns(5)
     columns[0].metric("Before campaign", number(analysis.baseline.average), help="Average daily streams in the baseline window.")
     columns[1].metric("During campaign", number(analysis.during.average), help="Average daily streams while the campaign ran.")
