@@ -25,6 +25,8 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
+from lollie.analysis.catalog_model import fit_baseline
+
 MIN_PER_WEEKDAY = 3
 METHOD_WEEKDAY = "Same-weekday median"
 METHOD_OVERALL = "Overall median"
@@ -38,6 +40,7 @@ class AnalysisSettings:
     post_days: int = 14
     gap_days: int = 0
     min_baseline_days: int = 7
+    catalog_mode: bool = False
 
 
 @dataclass
@@ -183,7 +186,14 @@ def analyze_campaign_window(
         ), None
         flags.append(text)
     else:
-        method, text, value = compute_baseline(observed)
+        if settings.catalog_mode:
+            model = fit_baseline(observed, b_end)
+            if model is None:
+                method, text, value = METHOD_NONE, "The Global Catalog baseline needs more usable history.", None
+            else:
+                method, text, value = "Global Catalog baseline", model.description, model
+        else:
+            method, text, value = compute_baseline(observed)
         if baseline.coverage is not None and baseline.coverage < 0.8:
             flags.append(
                 f"The baseline window has streaming data for {baseline.days_with_data} of {baseline.days_in_window} days."
@@ -191,7 +201,7 @@ def analyze_campaign_window(
         flags.extend(_drift_flag(observed))
 
     span = pd.date_range(b_start, p_end if settings.post_days > 0 else end)
-    expected = _expected_for(span, value)
+    expected = value.predict(span) if settings.catalog_mode and value is not None else _expected_for(span, value)
     frame = pd.DataFrame({"date": span, "actual": series.reindex(span).values, "expected": expected.values})
     frame["window"] = np.select(
         [frame["date"] < start, frame["date"] <= end],
@@ -202,7 +212,13 @@ def analyze_campaign_window(
     result = WindowAnalysis(
         start=start, end=end, settings=settings, baseline=baseline, during=during, post=post,
         method=method, method_text=text,
-        expected_value=None if value is None else (float(np.mean(list(value.values()))) if isinstance(value, dict) else float(value)),
+        expected_value=(
+            None
+            if value is None
+            else float(expected.iloc[span.get_loc(b_end)])
+            if settings.catalog_mode
+            else (float(np.mean(list(value.values()))) if isinstance(value, dict) else float(value))
+        ),
         series=frame, flags=flags,
     )
     if value is not None:

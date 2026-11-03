@@ -104,7 +104,8 @@ track_file = st.sidebar.file_uploader(
 st.sidebar.markdown("---")
 st.sidebar.subheader("Analysis windows")
 baseline_days = st.sidebar.slider(
-    "Baseline length (days before launch)", 7, 56, 28, help="Streams in these days set the expected level."
+    "Baseline length (days before launch)", 7, 56, 56 if demo_mode else 28,
+    help="Streams in these days set the expected level."
 )
 post_days = st.sidebar.slider(
     "After-campaign window (days)", 0, 28, 14, help="Days after the campaign ends that are checked for a lingering change."
@@ -180,7 +181,11 @@ with st.sidebar.expander("Advanced Settings", expanded=demo_mode):
     )
 
 settings = AnalysisSettings(
-    baseline_days=baseline_days, post_days=post_days, gap_days=gap_days, min_baseline_days=min_baseline_days
+    baseline_days=baseline_days,
+    post_days=post_days,
+    gap_days=gap_days,
+    min_baseline_days=min_baseline_days,
+    catalog_mode=demo_mode,
 )
 
 # -----------------------------
