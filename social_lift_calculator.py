@@ -15,7 +15,13 @@ from datetime import datetime
 import pandas as pd
 import streamlit as st
 
-from lollie.analysis.baseline import AnalysisSettings, aggregate_daily, analyze_campaign_window, baseline_window
+from lollie.analysis.baseline import (
+    AnalysisSettings,
+    aggregate_daily,
+    analyze_campaign_window,
+    baseline_window,
+    spotify_observed_change,
+)
 from lollie.analysis.campaigns import CampaignDates, campaign_dates, overlap_notes
 from lollie.analysis.markets import PAID, market_comparison, market_rank_note
 from lollie.analysis.relationships import lag_relationship, spend_series
@@ -29,7 +35,7 @@ from lollie.streams.tracks import (
     tracks_from_stream_frame,
 )
 from lollie.summary import build_summary
-from lollie.valuation import DEFAULT_RATE_USD, estimate_streaming_value, spotify_observed_change
+from lollie.valuation import DEFAULT_RATE_USD, estimate_streaming_value
 from lollie.ui.campaign_tracks import choose_campaign_scope
 from lollie.ui.paid_sections import (
     UPLOAD_TYPES,
