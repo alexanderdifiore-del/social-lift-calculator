@@ -10,8 +10,6 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from lollie.analysis.baseline import AnalysisSettings, aggregate_daily, analyze_campaign_window
-
 DEFAULT_RATE_USD = 0.004
 RATE_DSP = "Spotify"
 LABEL = "Estimated Streaming Value Change"
@@ -43,26 +41,6 @@ def format_money(value: float) -> str:
     sign = "+" if value > 0 else ("-" if value < 0 else "")
     digits = 0 if abs(value) >= 1000 else 2
     return f"{sign}${abs(value):,.{digits}f}"
-
-
-def spotify_observed_change(
-    matched: pd.DataFrame,
-    market_codes: list[str] | None,
-    start: pd.Timestamp,
-    end: pd.Timestamp,
-    settings: AnalysisSettings,
-) -> tuple[float | None, str]:
-    """Observed change on Spotify-only rows for the same campaign window (for All-DSP views)."""
-    from lollie.streams.tracks import daily_scope_totals
-
-    daily = daily_scope_totals(matched, "Spotify")
-    series, _ = aggregate_daily(daily, market_codes)
-    if series.empty:
-        return None, "No Spotify streaming rows match this campaign and country selection."
-    analysis = analyze_campaign_window(series, start, end, settings)
-    if analysis.observed_change is None or pd.isna(analysis.observed_change):
-        return None, "Spotify streams in the campaign window are missing or incomplete, so observed change cannot be calculated."
-    return float(analysis.observed_change), ""
 
 
 def estimate_streaming_value(

@@ -4,7 +4,8 @@ import pandas as pd
 import pytest
 
 from lollie.analysis.baseline import AnalysisSettings, analyze_campaign_window
-from lollie.valuation import DEFAULT_RATE_USD, estimate_streaming_value, format_money, spotify_observed_change
+from lollie.analysis.baseline import spotify_observed_change
+from lollie.valuation import DEFAULT_RATE_USD, estimate_streaming_value, format_money
 
 
 def test_value_is_observed_change_times_rate():
