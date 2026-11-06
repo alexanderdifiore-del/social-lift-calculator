@@ -20,7 +20,6 @@ from lollie.analysis.baseline import (
     aggregate_daily,
     analyze_campaign_window,
     baseline_window,
-    spotify_observed_change,
 )
 from lollie.analysis.campaigns import CampaignDates, campaign_dates, overlap_notes
 from lollie.analysis.markets import PAID, market_comparison, market_rank_note
@@ -53,6 +52,24 @@ from lollie.ui.sections import (
     results_sentences,
 )
 from lollie.ui.stream_import import StreamData, ingest_stream_files
+
+
+def spotify_observed_change(
+    matched: pd.DataFrame,
+    market_codes: list[str] | None,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    settings: AnalysisSettings,
+) -> tuple[float | None, str]:
+    """Compute the Spotify-only change used by the optional estimate."""
+    daily = daily_scope_totals(matched, "Spotify")
+    series, _ = aggregate_daily(daily, market_codes)
+    if series.empty:
+        return None, "No Spotify streaming rows match this campaign and country selection."
+    result = analyze_campaign_window(series, start, end, settings)
+    if result.observed_change is None or pd.isna(result.observed_change):
+        return None, "Spotify streams in the campaign window are missing or incomplete, so observed change cannot be calculated."
+    return float(result.observed_change), ""
 
 st.set_page_config(page_title="lollie", page_icon="🍭", layout="wide")
 
