@@ -29,7 +29,7 @@ from lollie.streams.tracks import (
     tracks_from_stream_frame,
 )
 from lollie.summary import build_summary
-from lollie.valuation import DEFAULT_RATE_USD, estimate_streaming_value
+from lollie.valuation import DEFAULT_RATE_USD, estimate_streaming_value, spotify_observed_change
 from lollie.ui.campaign_tracks import choose_campaign_scope
 from lollie.ui.paid_sections import (
     UPLOAD_TYPES,
@@ -422,12 +422,25 @@ else:
         st.warning("There is no streaming data for the selected countries and DSP.")
     else:
         analysis = analyze_campaign_window(series, dates.start, dates.end, settings)
+        if demo_mode and any("missing streaming data" in note.lower() for note in agg_notes):
+            agg_notes.append(
+                "Synthetic demo note: Germany is missing a few days in the sample export on purpose, "
+                "so you can see how Lollie leaves out incomplete multi-country days instead of treating them as zero."
+            )
+        if dsp_choice == "Spotify":
+            value_streams = analysis.observed_change
+            value_applies, value_block_reason = True, ""
+        else:
+            value_streams, value_block_reason = spotify_observed_change(
+                matched, streaming_codes, dates.start, dates.end, settings
+            )
+            value_applies = value_block_reason == ""
         value = estimate_streaming_value(
-            analysis.observed_change,
+            value_streams,
             value_rate,
             enabled=show_estimate,
-            applies=dsp_choice == "Spotify",
-            reason_if_not_applicable="The estimate is available for Spotify only.",
+            applies=value_applies,
+            reason_if_not_applicable=value_block_reason,
         )
         if not paid_campaign.empty:
             spend_daily = daily_series(paid_campaign)[["date", "spend"]]

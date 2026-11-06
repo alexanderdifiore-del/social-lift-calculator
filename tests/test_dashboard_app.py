@@ -49,6 +49,9 @@ def test_demo_mode_shows_all_five_sections_and_is_labelled_synthetic():
     assert "Spend" in labels
     assert any(label in labels for label in ("Observed streaming change", "Observed Streaming Change"))
     assert any(label in labels for label in ("Change versus baseline", "Percentage Change vs. Baseline"))
+    value_labels = [m.value for m in at.metric if m.label == "Estimated Streaming Value Change"]
+    assert value_labels and value_labels[0] not in ("Not calculated", "Off")
+    assert "$" in value_labels[0] or "observed" in value_labels[0].lower()
 
 
 def test_turning_demo_off_removes_all_demo_data():
