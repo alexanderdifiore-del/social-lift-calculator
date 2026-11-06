@@ -1,17 +1,7 @@
 """Optional "Estimated Streaming Value Change".
 
-A deliberately small, separate calculation::
-
-    Estimated Streaming Value Change = Observed Streaming Change x assumed value per stream
-
-The assumed value (default $0.004 USD per Spotify stream) is an illustrative planning figure
-that the user can edit or switch off. It is never used to work out expected streams, so the
-baseline is the same whether the estimate is on or off.
-
-It is not WMG revenue, royalty income, profit or advertising ROI. Spotify has no universal
-fixed per-stream royalty, the rate applies to Spotify streams only (it is not carried over to
-other services), and the observed change is not shown to have been caused by advertising. A
-negative result is a lower-than-baseline estimate, not a verified financial loss.
+Observed Streaming Change x assumed value per stream (default $0.004 USD per Spotify stream).
+Never used in the expected-streams baseline.
 """
 
 from __future__ import annotations
@@ -19,6 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import pandas as pd
+
+from lollie.analysis.baseline import AnalysisSettings, aggregate_daily, analyze_campaign_window
 
 DEFAULT_RATE_USD = 0.004
 RATE_DSP = "Spotify"
@@ -53,6 +45,26 @@ def format_money(value: float) -> str:
     return f"{sign}${abs(value):,.{digits}f}"
 
 
+def spotify_observed_change(
+    matched: pd.DataFrame,
+    market_codes: list[str] | None,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    settings: AnalysisSettings,
+) -> tuple[float | None, str]:
+    """Observed change on Spotify-only rows for the same campaign window (for All-DSP views)."""
+    from lollie.streams.tracks import daily_scope_totals
+
+    daily = daily_scope_totals(matched, "Spotify")
+    series, _ = aggregate_daily(daily, market_codes)
+    if series.empty:
+        return None, "No Spotify streaming rows match this campaign and country selection."
+    analysis = analyze_campaign_window(series, start, end, settings)
+    if analysis.observed_change is None or pd.isna(analysis.observed_change):
+        return None, "Spotify streams in the campaign window are missing or incomplete, so observed change cannot be calculated."
+    return float(analysis.observed_change), ""
+
+
 def estimate_streaming_value(
     observed_change: float | None,
     rate: float | None = DEFAULT_RATE_USD,
@@ -65,10 +77,13 @@ def estimate_streaming_value(
     if not enabled:
         return StreamingValue(False, rate, observed_change, None, "Off")
     if not applies:
-        return StreamingValue(True, rate, observed_change, None, NOT_CALCULATED, reason_if_not_applicable)
+        reason = reason_if_not_applicable or "This estimate is not available for the current view."
+        return StreamingValue(True, rate, observed_change, None, reason, reason)
     if rate is None or pd.isna(rate) or rate <= 0:
-        return StreamingValue(True, rate, observed_change, None, NOT_CALCULATED, "No valid value per stream is set.")
+        reason = "No valid value per stream is set in Advanced Settings."
+        return StreamingValue(True, rate, observed_change, None, reason, reason)
     if observed_change is None or pd.isna(observed_change):
-        return StreamingValue(True, rate, observed_change, None, NOT_CALCULATED, "There is no valid observed streaming change.")
+        reason = "There is no valid observed streaming change for Spotify in the campaign window."
+        return StreamingValue(True, rate, observed_change, None, reason, reason)
     value = float(observed_change) * float(rate)
     return StreamingValue(True, float(rate), float(observed_change), value, format_money(value))

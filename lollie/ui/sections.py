@@ -5,6 +5,8 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+import numpy as np
+
 from lollie.analysis.baseline import AnalysisSettings, WindowAnalysis, label_change
 from lollie.analysis.campaigns import campaign_comparison, repeated_pattern_note
 from lollie.analysis.relationships import Relationship
@@ -16,7 +18,6 @@ from lollie.analysis.baseline import aggregate_daily, analyze_campaign_window
 from lollie.ui.charts import market_chart, streaming_intelligence_chart
 from lollie.ui.paid_sections import by_country_table, money, number, render_kpis, render_results, show_table
 from lollie.ui.streamlit_compat import plotly_chart as st_plotly_chart
-from lollie.ui.streamlit_compat import reading_label
 
 BASELINE_EXPLAINER = """
 **How the expected baseline is worked out**
@@ -81,19 +82,40 @@ def render_streaming_tiles(analysis: WindowAnalysis, value=None) -> None:
             "Observed Streaming Change",
             "n/a" if analysis.observed_change is None else f"{analysis.observed_change:+,.0f}",
         )
-        columns[3].metric("Percentage Change vs. Baseline", pct_text(analysis.pct_change))
         history = analysis.series[
             (analysis.series["window"] == "Before")
             & analysis.series["actual"].notna()
             & analysis.series["expected"].notna()
         ]
-        sigma = ((history["actual"] - history["expected"]) / history["expected"]).std() if len(history) > 2 else None
-        reading = "Within normal range"
-        if analysis.pct_change is not None and sigma and abs(analysis.pct_change) > max(2 * sigma, 0.02):
-            reading = "Above normal range" if analysis.pct_change > 0 else "Below normal range"
-        elif analysis.pct_change is not None and sigma and abs(analysis.pct_change) > sigma:
-            reading = "Slightly above range" if analysis.pct_change > 0 else "Slightly below range"
-        reading_label(reading)
+        sigma = None
+        if len(history) > 2:
+            relative = (history["actual"] - history["expected"]) / history["expected"].replace(0, np.nan)
+            relative = relative.replace([np.inf, -np.inf], np.nan).dropna()
+            if len(relative) > 2:
+                sigma = float(relative.std())
+        reading = "Insufficient data"
+        if analysis.pct_change is not None and sigma is not None and np.isfinite(sigma):
+            if abs(analysis.pct_change) > max(2 * sigma, 0.02):
+                reading = (
+                    "Above normal historical range"
+                    if analysis.pct_change > 0
+                    else "Below normal historical range"
+                )
+            elif abs(analysis.pct_change) > sigma:
+                reading = (
+                    "Slightly above normal historical range"
+                    if analysis.pct_change > 0
+                    else "Slightly below normal historical range"
+                )
+            else:
+                reading = "Within normal historical range"
+        columns[3].metric(
+            "Percentage Change vs. Baseline",
+            pct_text(analysis.pct_change),
+            delta=reading,
+            delta_color="off",
+            help="Compares actual campaign streams with the Global Catalog baseline. The status describes actual performance, not the expected baseline itself.",
+        )
         st.caption(
             f"Global Catalog baseline: {analysis.baseline.days_with_data} of {analysis.baseline.days_in_window} "
             f"history days with data. Expected streams use only pre-campaign history."
@@ -101,9 +123,17 @@ def render_streaming_tiles(analysis: WindowAnalysis, value=None) -> None:
         if value is not None:
             value_columns = st.columns([1, 3])
             value_columns[0].metric("Estimated Streaming Value Change", value.display)
+            if value.calculated:
+                detail = (
+                    f"{value.streams_change:+,.0f} observed Spotify streams in the campaign window "
+                    f"x ${value.rate:.4f} assumed per stream. "
+                )
+            else:
+                detail = f"{value.reason} " if value.reason else ""
             value_columns[1].caption(
-                f"{value.reason + ' ' if value.reason else ''}This is a planning estimate only; "
-                "it is not revenue, royalties, profit or ad ROI."
+                detail
+                + "Planning estimate only; not verified royalty revenue, profit or advertising ROI. "
+                "Not shown to be caused by the ads."
             )
         return
     columns = st.columns(5)
